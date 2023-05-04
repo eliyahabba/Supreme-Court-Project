@@ -7,6 +7,7 @@ import pandas as pd
 from gensim.test.utils import datapath
 from gensim import models
 import numpy as np
+from gensim.models import CoherenceModel
 
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s',
                     level=logging.INFO)
@@ -22,7 +23,7 @@ def create_dir(directory):
     return directory
 
 
-def remove_rare_and_common_words(docs, no_below, no_above):
+def create_dictionary(docs, no_below, no_above):
     """using gensim Dictionary object in order to filter common + rare words"""
     dictionary = Dictionary(docs)
     dictionary.filter_extremes(no_below=no_below, no_above=no_above)
@@ -35,7 +36,7 @@ def create_bag_of_words(dictionary, docs):
     return corpus
 
 
-def run_lda_pipeline(base_dir, lemmatize_dir, results_dir, params_dict):
+def create_docs(lemmatize_dir):
     docs = []
     filenames_lst = []
     for filename in os.listdir(lemmatize_dir):
@@ -46,22 +47,13 @@ def run_lda_pipeline(base_dir, lemmatize_dir, results_dir, params_dict):
         splitted_text = split_text(text)
         docs.append(splitted_text)
         filenames_lst.append(filename)
+    return docs, filenames_lst
 
-    # TODO - change Dictionary Params
-    dictionary = remove_rare_and_common_words(docs, 300, 0.5)
-    corpus = create_bag_of_words(dictionary, docs)
 
+def run_lda_pipeline(results_dir, docs, filenames_lst, dictionary, corpus,
+                     params_dict):
     temp = dictionary[0]  # This is only to "load" the dictionary.
     id2word = dictionary.id2token
-
-    # to modify hyper-parameters
-    params_dict = {"num_topics": 15,
-                   "chunksize": 2000,
-                   "passes": 30,
-                   "iterations": 400,
-                   "eval_every": None,
-                   "alpha": 0.6,
-                   }
     model = LdaModel(
         corpus=corpus,
         id2word=id2word,
@@ -80,8 +72,8 @@ def run_lda_pipeline(base_dir, lemmatize_dir, results_dir, params_dict):
     # creating a directory for each model
     results_dir = create_dir(os.path.join(results_dir, f"{model_identifier}"))
 
-    save_excel_dir = os.path.join(results_dir, f'topics.csv')
-    pd.DataFrame(model.print_topics(num_topics=-1)).to_csv(save_excel_dir)
+    save_excel_dir = os.path.join(results_dir, f'topics.xlsx')
+    pd.DataFrame(model.print_topics(num_topics=-1)).to_excel(save_excel_dir)
 
     # saving model object
     save_model_dir = os.path.join(results_dir, f'model')
@@ -104,7 +96,10 @@ def run_lda_pipeline(base_dir, lemmatize_dir, results_dir, params_dict):
     df = df.pivot(index="filename", columns="topic_id",
                   values="topic_prob").reset_index()
     df.replace(np.nan, 0).to_csv(save_doc_topics_dir)
-    return corpus, save_model_dir
+
+    # calculate model score
+    score = cohernce_score(model, docs, dictionary)
+    return corpus, save_model_dir, score
 
 
 def load_lda_model(model_path, bow):
@@ -115,10 +110,30 @@ def load_lda_model(model_path, bow):
     return
 
 
+def cohernce_score(model, docs, dictionary):
+    coherence_model_lda = CoherenceModel(model=model,
+                                         texts=docs,
+                                         dictionary=dictionary,
+                                         coherence='c_v')
+    coherence_lda = coherence_model_lda.get_coherence()
+    return coherence_lda
+
+
 if __name__ == "__main__":
     base_dir = r"C:\Users\noabi\PycharmProjects\University"
     lemmatize_dir = os.path.join(base_dir, r"LdaReadyText")
     results_dir = os.path.join(base_dir, r"YapLdaResults")
-    bow, save_model_dir = run_lda_pipeline(base_dir, lemmatize_dir,
-                                           results_dir)
+    params_dict = {"num_topics": 15,
+                   "chunksize": 2000,
+                   "passes": 1,
+                   "iterations": 400,
+                   "eval_every": None,
+                   "alpha": 0.6,
+                   }
+    docs, filenames_lst = create_docs(lemmatize_dir)
+    dictionary = create_dictionary(docs, 300, 0.5)
+    corpus = create_bag_of_words(dictionary, docs)
+    bow, save_model_dir, score = run_lda_pipeline(results_dir, docs,
+                                                  filenames_lst, dictionary,
+                                                  corpus, params_dict)
     load_lda_model(save_model_dir, bow)
