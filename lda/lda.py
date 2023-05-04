@@ -35,7 +35,7 @@ def create_bag_of_words(dictionary, docs):
     return corpus
 
 
-def run_lda_pipeline(base_dir, lemmatize_dir, results_dir):
+def run_lda_pipeline(base_dir, lemmatize_dir, results_dir, params_dict):
     docs = []
     filenames_lst = []
     for filename in os.listdir(lemmatize_dir):
@@ -48,14 +48,14 @@ def run_lda_pipeline(base_dir, lemmatize_dir, results_dir):
         filenames_lst.append(filename)
 
     # TODO - change Dictionary Params
-    dictionary = remove_rare_and_common_words(docs, 1, 0.5)
+    dictionary = remove_rare_and_common_words(docs, 300, 0.5)
     corpus = create_bag_of_words(dictionary, docs)
 
     temp = dictionary[0]  # This is only to "load" the dictionary.
     id2word = dictionary.id2token
 
     # to modify hyper-parameters
-    params_dict = {"num_topics": 13,
+    params_dict = {"num_topics": 15,
                    "chunksize": 2000,
                    "passes": 30,
                    "iterations": 400,
@@ -117,8 +117,8 @@ def load_lda_model(model_path, bow):
 
 if __name__ == "__main__":
     base_dir = r"C:\Users\noabi\PycharmProjects\University"
-    lemmatize_dir = os.path.join(base_dir, r"TrankitLemmatizedTextTest")
+    lemmatize_dir = os.path.join(base_dir, r"LdaReadyText")
     results_dir = os.path.join(base_dir, r"YapLdaResults")
-    bow, save_mofel_dir = run_lda_pipeline(base_dir, lemmatize_dir,
+    bow, save_model_dir = run_lda_pipeline(base_dir, lemmatize_dir,
                                            results_dir)
-    load_lda_model(save_mofel_dir, bow)
+    load_lda_model(save_model_dir, bow)
