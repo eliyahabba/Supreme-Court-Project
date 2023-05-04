@@ -43,7 +43,7 @@ def run_model_with_grid_search(results_dir, docs,
         print(f"model num {model_ind} finished at: {datetime.datetime.now()}")
         model_ind += 1
 
-    pd.DataFrame(models_df).csv(
+    pd.DataFrame(models_df).to_csv(
         os.path.join(results_dir, f"{int(time.time())}_grid_search.csv"))
 
 
