@@ -51,7 +51,7 @@ def create_dir(directory):
 
 
 if __name__ == "__main__":
-    base_dir = r"C:\Users\noabi\PycharmProjects\University"
+    base_dir = "/mnt/local/mikehash/Data"
     source_dir = os.path.join(base_dir, r"LemmatizedText")
     results_dir = os.path.join(base_dir, r"LdaReadyText")
     create_dir(results_dir)
