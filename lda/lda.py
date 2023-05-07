@@ -99,7 +99,7 @@ def run_lda_pipeline(results_dir, docs, filenames_lst, dictionary, corpus,
 
     # calculate model score
     score = cohernce_score(model, docs, dictionary)
-    return corpus, save_model_dir, score
+    return corpus, save_model_dir, score, model_identifier
 
 
 def load_lda_model(model_path, bow):
@@ -119,21 +119,21 @@ def cohernce_score(model, docs, dictionary):
     return coherence_lda
 
 
-if __name__ == "__main__":
-    base_dir = r"C:\Users\noabi\PycharmProjects\University"
-    lemmatize_dir = os.path.join(base_dir, r"LdaReadyText")
-    results_dir = os.path.join(base_dir, r"YapLdaResults")
-    params_dict = {"num_topics": 15,
-                   "chunksize": 2000,
-                   "passes": 1,
-                   "iterations": 400,
-                   "eval_every": None,
-                   "alpha": 0.6,
-                   }
-    docs, filenames_lst = create_docs(lemmatize_dir)
-    dictionary = create_dictionary(docs, 300, 0.5)
-    corpus = create_bag_of_words(dictionary, docs)
-    bow, save_model_dir, score = run_lda_pipeline(results_dir, docs,
-                                                  filenames_lst, dictionary,
-                                                  corpus, params_dict)
-    load_lda_model(save_model_dir, bow)
+# if __name__ == "__main__":
+#     base_dir = r"C:\Users\noabi\PycharmProjects\University"
+#     lemmatize_dir = os.path.join(base_dir, r"LdaReadyText")
+#     results_dir = os.path.join(base_dir, r"YapLdaResults")
+#     params_dict = {"num_topics": 15,
+#                    "chunksize": 2000,
+#                    "passes": 1,
+#                    "iterations": 400,
+#                    "eval_every": None,
+#                    "alpha": 0.6,
+#                    }
+#     docs, filenames_lst = create_docs(lemmatize_dir)
+#     dictionary = create_dictionary(docs, 300, 0.5)
+#     corpus = create_bag_of_words(dictionary, docs)
+#     bow, save_model_dir, score, identifier = run_lda_pipeline(results_dir, docs,
+#                                                   filenames_lst, dictionary,
+#                                                   corpus, params_dict)
+#     load_lda_model(save_model_dir, bow)

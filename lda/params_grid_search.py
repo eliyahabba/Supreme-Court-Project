@@ -34,11 +34,14 @@ def run_model_with_grid_search(results_dir, docs,
                        }
         print(
             f"model num {model_ind} with params {params_dict} start: {datetime.datetime.now()}\n")
-        bow, save_model_dir, score = run_lda_pipeline(results_dir, docs,
-                                                      filenames_lst,
-                                                      dictionary, corpus,
-                                                      params_dict)
+        bow, save_model_dir, score, identifier, = run_lda_pipeline(results_dir,
+                                                                   docs,
+                                                                   filenames_lst,
+                                                                   dictionary,
+                                                                   corpus,
+                                                                   params_dict)
         params_dict["cohernce_score"] = score
+        params_dict["identifier"] = identifier
         models_df.append(params_dict)
         print(f"model num {model_ind} finished at: {datetime.datetime.now()}")
         model_ind += 1
@@ -48,16 +51,16 @@ def run_model_with_grid_search(results_dir, docs,
 
 
 if __name__ == "__main__":
-    base_dir = r"C:\Users\noabi\PycharmProjects\University"
-    lemmatize_dir = os.path.join(base_dir, r"LdaReadyText")
+    base_dir = "/mnt/local/mikehash/Data"
+    lemmatize_dir = os.path.join(base_dir, r"LemmatizedText")
     results_dir = os.path.join(base_dir, r"YapLdaResults")
-    alphas = alpha_grid(0.1, 0.3)
-    passes = passes_grid(5, 15)
+    alphas = alpha_grid(0.1, 1)
+    passes = passes_grid(20, 30)
     params_list = grid_params_lists(alphas, passes)
     print("creating docs")
     docs, filenames_lst = create_docs(lemmatize_dir)
     print("creating dictionary object")
-    dictionary = create_dictionary(docs, 300, 0.5)
+    dictionary = create_dictionary(docs, 200, 0.5)
     print("creating bag of words")
     corpus = create_bag_of_words(dictionary, docs)
     print("running models")
