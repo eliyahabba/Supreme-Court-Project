@@ -16,7 +16,7 @@ def passes_grid(min_passes=5, max_passes=40, step=5):
 
 
 def topics_grid(min_topics=10, max_topics=60, step=5):
-    return np.arrange(min_topics, max_topics, step)
+    return np.arange(min_topics, max_topics, step)
 
 
 def grid_params_lists(alpha_grid, passes_grid, topics_grid):
