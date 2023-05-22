@@ -15,8 +15,12 @@ def passes_grid(min_passes=5, max_passes=40, step=5):
     return np.arange(min_passes, max_passes, step)
 
 
-def grid_params_lists(alpha_grid, passes_grid):
-    return list(itertools.product(alpha_grid, passes_grid))
+def topics_grid(min_topics=10, max_topics=60, step=5):
+    return np.arrange(min_topics, max_topics, step)
+
+
+def grid_params_lists(alpha_grid, passes_grid, topics_grid):
+    return list(itertools.product(alpha_grid, passes_grid, topics_grid))
 
 
 def run_model_with_grid_search(results_dir, docs,
@@ -25,10 +29,10 @@ def run_model_with_grid_search(results_dir, docs,
     model_ind = 1
     models_df = []
     for params in params_list:
-        params_dict = {"num_topics": 15,
-                       "chunksize": 2000,
+        params_dict = {"chunksize": 2000,
                        "alpha": params[0],
                        "passes": params[1],
+                       "num_topics": params[2],
                        "iterations": 400,
                        "eval_every": None,
                        }
@@ -56,7 +60,8 @@ if __name__ == "__main__":
     results_dir = os.path.join(base_dir, r"YapLdaResults")
     alphas = alpha_grid(0.1, 1)
     passes = passes_grid(20, 30)
-    params_list = grid_params_lists(alphas, passes)
+    topics = topics_grid(10, 60)
+    params_list = grid_params_lists(alphas, passes, topics)
     print("creating docs")
     docs, filenames_lst = create_docs(lemmatize_dir)
     print("creating dictionary object")
