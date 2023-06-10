@@ -60,7 +60,7 @@ if __name__ == "__main__":
     results_dir = os.path.join(base_dir, r"YapLdaResults")
     alphas = alpha_grid(0.1, 1)
     passes = passes_grid(20, 30)
-    topics = topics_grid(40, 60)
+    topics = topics_grid(10, 41)
     params_list = grid_params_lists(alphas, passes, topics)
     print("creating docs")
     docs, filenames_lst = create_docs(lemmatize_dir)
