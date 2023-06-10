@@ -60,7 +60,7 @@ if __name__ == "__main__":
     arguments = [float(var) for var in arguments[1:]]
     if arguments:
         alphas = alpha_grid(arguments[0], arguments[1])
-        passes = passes_grid(arguments[2], arguments[3])
+        passes = passes_grid(int(arguments[2]), int(arguments[3]))
         topics = topics_grid(arguments[4], arguments[5])
     else:
         alphas = alpha_grid(0.1, 1)
