@@ -5,6 +5,7 @@ import datetime
 import os
 import pandas as pd
 import time
+import sys
 
 
 def alpha_grid(min_alpha=0.0, max_alpha=1.0, step=0.1):
@@ -55,12 +56,20 @@ def run_model_with_grid_search(results_dir, docs,
 
 
 if __name__ == "__main__":
+    arguments = sys.argv
+    arguments = [float(var) for var in arguments[1:]]
+    if arguments:
+        alphas = alpha_grid(arguments[0], arguments[1])
+        passes = passes_grid(arguments[2], arguments[3])
+        topics = topics_grid(arguments[4], arguments[5])
+    else:
+        alphas = alpha_grid(0.1, 1)
+        passes = passes_grid(20, 30)
+        topics = topics_grid(10, 60)
+
     base_dir = "/mnt/local/mikehash/Data/HuggingFaceSupremeCourt"
     lemmatize_dir = os.path.join(base_dir, r"Lemmatized")
     results_dir = os.path.join(base_dir, r"YapLdaResults")
-    alphas = alpha_grid(0.1, 1)
-    passes = passes_grid(20, 30)
-    topics = topics_grid(10, 60)
     params_list = grid_params_lists(alphas, passes, topics)
     print("creating docs")
     docs, filenames_lst = create_docs(lemmatize_dir)
