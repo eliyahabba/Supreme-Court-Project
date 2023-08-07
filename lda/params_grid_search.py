@@ -39,13 +39,15 @@ def run_model_with_grid_search(results_dir, docs,
                        }
         print(
             f"model num {model_ind} with params {params_dict} start: {datetime.datetime.now()}\n")
-        bow, save_model_dir, score, identifier, = run_lda_pipeline(results_dir,
+        bow, save_model_dir, scores, identifier, = run_lda_pipeline(results_dir,
                                                                    docs,
                                                                    filenames_lst,
                                                                    dictionary,
                                                                    corpus,
                                                                    params_dict)
-        params_dict["cohernce_score"] = score
+        params_dict["cv_score"] = scores["cv"]
+        params_dict["u_mass_score"] = scores["u_mass"]
+        params_dict["c_uci_score"] = scores["c_uci"]
         params_dict["identifier"] = identifier
         models_df.append(params_dict)
         print(f"model num {model_ind} finished at: {datetime.datetime.now()}")

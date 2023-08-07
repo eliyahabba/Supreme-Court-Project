@@ -98,8 +98,9 @@ def run_lda_pipeline(results_dir, docs, filenames_lst, dictionary, corpus,
     df.replace(np.nan, 0).to_csv(save_doc_topics_dir)
 
     # calculate model score
-    score = cohernce_score(model, docs, dictionary)
-    return corpus, save_model_dir, score, model_identifier
+    cv, u_mass, c_uci = cohernce_score(model, docs, dictionary, corpus)
+    scores = {"cv": cv, "u_mass": u_mass, "c_uci": c_uci}
+    return corpus, save_model_dir, scores, model_identifier
 
 
 def load_lda_model(model_path, bow):
@@ -110,13 +111,29 @@ def load_lda_model(model_path, bow):
     return
 
 
-def cohernce_score(model, docs, dictionary):
-    coherence_model_lda = CoherenceModel(model=model,
+def cohernce_score(model, docs, dictionary, corpus):
+    # cv score (less preferred)
+    cv_model_lda = CoherenceModel(model=model,
                                          texts=docs,
                                          dictionary=dictionary,
-                                         coherence='c_v')
-    coherence_lda = coherence_model_lda.get_coherence()
-    return coherence_lda
+                                         coherence='c_v',
+                                        corpus=corpus)
+    cv = cv_model_lda.get_coherence()
+    # u_mass score
+    u_mass_model = CoherenceModel(model=model,
+                                  texts=docs,
+                                  dictionary=dictionary,
+                                  coherence='u_mass',
+                                  corpus=corpus)
+    u_mass = u_mass_model.get_coherence()
+    # c_uci score
+    c_uci_model = CoherenceModel(model=model,
+                                  texts=docs,
+                                  dictionary=dictionary,
+                                  coherence='c_uci',
+                                 corpus=corpus)
+    c_uci = c_uci_model.get_coherence()
+    return cv, u_mass, c_uci  # list of coherence metrics
 
 
 if __name__ == "__main__":
@@ -133,7 +150,7 @@ if __name__ == "__main__":
     docs, filenames_lst = create_docs(lemmatize_dir)
     dictionary = create_dictionary(docs, 2, 0.5)
     corpus = create_bag_of_words(dictionary, docs)
-    bow, save_model_dir, score, identifier = run_lda_pipeline(results_dir, docs,
+    bow, save_model_dir, scores, identifier = run_lda_pipeline(results_dir, docs,
                                                   filenames_lst, dictionary,
                                                   corpus, params_dict)
     load_lda_model(save_model_dir, bow)
