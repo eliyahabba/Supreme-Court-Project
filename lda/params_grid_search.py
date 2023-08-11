@@ -66,19 +66,20 @@ def run_model_with_grid_search(results_dir, docs,
 
 
 if __name__ == "__main__":
-    data = json.loads(sys.argv[1])
     convert_to_float_keys = ["alpha_min", "alpha_max", "no_above_p"]
     convert_to_int_keys = ["passes_min", "passes_max", "topics_min",
                            "topics_max", "no_below_int", "chunksize",
                            "iterations"]
-
-    # converting keys
-    for key, val in data.items():
-        if key in convert_to_float_keys:
-            data[key] = float(val)
-        elif key in convert_to_int_keys:
-            data[key] = int(val)
-
+    arguments = sys.argv
+    data = None
+    if len(arguments)>1:
+        data = json.loads(arguments[1])
+        # converting keys
+        for key, val in data.items():
+            if key in convert_to_float_keys:
+                data[key] = float(val)
+            elif key in convert_to_int_keys:
+                data[key] = int(val)
     if data:
         alphas = alpha_grid(data["alpha_min"], data["alpha_max"])
         passes = passes_grid(data["passes_min"], data["passes_max"])
@@ -87,6 +88,13 @@ if __name__ == "__main__":
         alphas = alpha_grid(0.1, 1)
         passes = passes_grid(20, 30)
         topics = topics_grid(10, 60)
+        no_below_int = int(input("no below int"))
+        no_above_p = float(input("no above p"))
+        chunksize = int(input("chunksize"))
+        iterations = int(input("iterations"))
+
+        data = {"no_below_int": no_below_int, "no_above_p": no_above_p,
+                "chunksize": chunksize, "iterations": iterations}
 
     base_dir = input("base dir")
     lemmatize_dir = input("lemmatized file dir")
