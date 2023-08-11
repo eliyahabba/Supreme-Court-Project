@@ -1,0 +1,1 @@
+{\"alpha_min\":0.1,\"alpha_max\":1,\"no_above_p\":0.7,\"no_below_int\":200,\"passes_min\":5,\"passes_max\":10,\"topics_min\":10,\"topics_max\":60,\"chunksize\":2000,\"iterations\":400}

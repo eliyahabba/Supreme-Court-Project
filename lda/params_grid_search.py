@@ -6,6 +6,7 @@ import os
 import pandas as pd
 import time
 import sys
+import json
 
 
 def alpha_grid(min_alpha=0.0, max_alpha=1.0, step=0.1):
@@ -20,8 +21,11 @@ def topics_grid(min_topics=10, max_topics=60, step=5):
     return np.arange(min_topics, max_topics, step)
 
 
-def grid_params_lists(alpha_grid, passes_grid, topics_grid):
-    return list(itertools.product(alpha_grid, passes_grid, topics_grid))
+def grid_params_lists(alpha_grid, passes_grid, topics_grid, no_below_dict,
+                      no_above_dict, chunksize, iterations):
+    return list(
+        itertools.product(alpha_grid, passes_grid, topics_grid, no_below_dict,
+                          no_above_dict, chunksize, iterations))
 
 
 def run_model_with_grid_search(results_dir, docs,
@@ -29,22 +33,26 @@ def run_model_with_grid_search(results_dir, docs,
                                corpus, dictionary, params_list):
     model_ind = 1
     models_df = []
+    print(f"number of models to run: {len(params_list)}")
     for params in params_list:
-        params_dict = {"chunksize": 2000,
-                       "alpha": params[0],
+        params_dict = {"alpha": params[0],
                        "passes": params[1],
                        "num_topics": params[2],
-                       "iterations": 400,
+                       "no_below_int": params[3],
+                       "no_above_percent": params[4],
+                       "chunksize": params[5],
+                       "iterations": params[6],
                        "eval_every": None,
                        }
         print(
             f"model num {model_ind} with params {params_dict} start: {datetime.datetime.now()}\n")
-        bow, save_model_dir, scores, identifier, = run_lda_pipeline(results_dir,
-                                                                   docs,
-                                                                   filenames_lst,
-                                                                   dictionary,
-                                                                   corpus,
-                                                                   params_dict)
+        bow, save_model_dir, scores, identifier, = run_lda_pipeline(
+            results_dir,
+            docs,
+            filenames_lst,
+            dictionary,
+            corpus,
+            params_dict)
         params_dict["cv_score"] = scores["cv"]
         params_dict["u_mass_score"] = scores["u_mass"]
         params_dict["c_uci_score"] = scores["c_uci"]
@@ -58,25 +66,48 @@ def run_model_with_grid_search(results_dir, docs,
 
 
 if __name__ == "__main__":
-    arguments = sys.argv
-    arguments = [float(var) for var in arguments[1:]]
-    if arguments:
-        alphas = alpha_grid(arguments[0], arguments[1])
-        passes = passes_grid(int(arguments[2]), int(arguments[3]))
-        topics = topics_grid(arguments[4], arguments[5])
+    data = json.loads(sys.argv[1])
+    convert_to_float_keys = ["alpha_min", "alpha_max", "no_above_p"]
+    convert_to_int_keys = ["passes_min", "passes_max", "topics_min",
+                           "topics_max", "no_below_int", "chunksize",
+                           "iterations"]
+
+    # converting keys
+    for key, val in data.items():
+        if key in convert_to_float_keys:
+            data[key] = float(val)
+        elif key in convert_to_int_keys:
+            data[key] = int(val)
+
+    if data:
+        alphas = alpha_grid(data["alpha_min"], data["alpha_max"])
+        passes = passes_grid(data["passes_min"], data["passes_max"])
+        topics = topics_grid(data["topics_min"], data["topics_max"])
     else:
         alphas = alpha_grid(0.1, 1)
         passes = passes_grid(20, 30)
         topics = topics_grid(10, 60)
 
-    base_dir = "/mnt/local/mikehash/Data/HuggingFaceSupremeCourt"
-    lemmatize_dir = os.path.join(base_dir, r"Lemmatized")
-    results_dir = os.path.join(base_dir, r"YapLdaResults")
-    params_list = grid_params_lists(alphas, passes, topics)
+    base_dir = input("base dir")
+    lemmatize_dir = input("lemmatized file dir")
+    results_dir = input("results dir")
+    lemmatize_dir = os.path.join(base_dir, lemmatize_dir)
+    results_dir = os.path.join(base_dir, results_dir)
+
+    dict_params = [data["no_below_int"], data["no_above_p"]]
+    chunksize_params = [data["chunksize"]]
+    iterations_params = [data["iterations"]]
+
+    params_list = grid_params_lists(alphas, passes, topics,
+                                    [data["no_below_int"]],
+                                    [data["no_above_p"]], [data["chunksize"]],
+                                    [data["iterations"]])
+
     print("creating docs")
     docs, filenames_lst = create_docs(lemmatize_dir)
     print("creating dictionary object")
-    dictionary = create_dictionary(docs, 200, 0.5)
+    dictionary = create_dictionary(docs, data["no_below_int"],
+                                   data["no_above_p"])
     print("creating bag of words")
     corpus = create_bag_of_words(dictionary, docs)
     print("running models")
