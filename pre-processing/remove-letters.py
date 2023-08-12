@@ -2,15 +2,23 @@ import os
 import datetime
 
 
+def read_remove_letters():
+    text_file = open('heb_stopwords.txt', "r", encoding='utf8')
+    text = text_file.read()
+    text_file.close()
+    return set(text.split("\n"))
+
+
 def file_logger(start_time, end_time, filename, file_ind):
     print(
         f"file {file_ind} \n processed {filename}\n start time {start_time} end_time {end_time}")
     return
 
 
-def remove_letters(text):
+def remove_letters(text, stop_words_set):
     splitted_text = text.split(" ")
-    return " ".join(word for word in splitted_text if len(word) > 1)
+    return " ".join(word for word in splitted_text if len(
+        word) > 1 and word not in stop_words_set and not word.isascii())
 
 
 def save_file(results_dir, filename, text, file_ind):
@@ -26,6 +34,7 @@ def save_file(results_dir, filename, text, file_ind):
 
 
 def run(source_dir, results_dir):
+    stop_words_set = read_remove_letters()
     done_text = list(os.listdir(results_dir))
     print(f"starting pipeline at {datetime.datetime.now()}")
     file_ind = 1
@@ -37,7 +46,7 @@ def run(source_dir, results_dir):
                          encoding='utf8')
         text = text_file.read()
         text_file.close()
-        text = remove_letters(text)
+        text = remove_letters(text, stop_words_set)
         save_file(results_dir, filename, text, file_ind)
         file_ind += 1
     print(f"ending pipeline at {datetime.datetime.now()}")
@@ -51,8 +60,8 @@ def create_dir(directory):
 
 
 if __name__ == "__main__":
-    base_dir = "/mnt/local/mikehash/Data"
-    source_dir = os.path.join(base_dir, r"LemmatizedText")
-    results_dir = os.path.join(base_dir, r"LdaReadyText")
+    read_remove_letters()
+    source_dir = input("insert lemmatized files path")
+    results_dir = input("insert results files path")
     create_dir(results_dir)
     run(source_dir, results_dir)
