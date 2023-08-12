@@ -85,22 +85,24 @@ if __name__ == "__main__":
         passes = passes_grid(data["passes_min"], data["passes_max"])
         topics = topics_grid(data["topics_min"], data["topics_max"])
     else:
-        alphas = alpha_grid(0.1, 1)
-        passes = passes_grid(20, 30)
-        topics = topics_grid(10, 60)
         no_below_int = int(input("no below int"))
         no_above_p = float(input("no above p"))
         chunksize = int(input("chunksize"))
         iterations = int(input("iterations"))
-
+        alpha_min = float(input("alpha min"))
+        alpha_max = float(input("alpha max"))
+        passes_min = int(input("passes min"))
+        passes_max = int(input("passes max"))
+        topics_min = int(input("topics min"))
+        topics_max = int(input("topics max"))
+        alphas = alpha_grid(alpha_min, alpha_max)
+        passes = passes_grid(passes_min, passes_max)
+        topics = topics_grid(topics_min, topics_max)
         data = {"no_below_int": no_below_int, "no_above_p": no_above_p,
                 "chunksize": chunksize, "iterations": iterations}
 
-    base_dir = input("base dir")
-    lemmatize_dir = input("lemmatized file dir")
-    results_dir = input("results dir")
-    lemmatize_dir = os.path.join(base_dir, lemmatize_dir)
-    results_dir = os.path.join(base_dir, results_dir)
+    lemmatize_dir = input("insert full lemmatized file dir")
+    results_dir = input("insert full results dir (already exist)")
 
     dict_params = [data["no_below_int"], data["no_above_p"]]
     chunksize_params = [data["chunksize"]]
