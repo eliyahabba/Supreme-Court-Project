@@ -36,6 +36,9 @@ def run(source_dir, lemmatized_dir, results_dir, min_words):
     for filename in os.listdir(source_dir):
         if filename in done_text:
             continue
+        if "." in filename and (filename.split(".")[1] != "txt"):
+            print("not a text file")
+            continue
         print(filename)
         text_file = open(os.path.join(source_dir, filename), "r",
                          encoding='utf8')
