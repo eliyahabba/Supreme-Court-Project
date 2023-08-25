@@ -21,10 +21,10 @@ def topics_grid(min_topics=10, max_topics=60, step=5):
     return np.arange(min_topics, max_topics, step)
 
 
-def grid_params_lists(alpha_grid, passes_grid, topics_grid, no_below_dict,
+def grid_params_lists(alpha_grid, eta_grid, passes_grid, topics_grid, no_below_dict,
                       no_above_dict, chunksize, iterations):
     return list(
-        itertools.product(alpha_grid, passes_grid, topics_grid, no_below_dict,
+        itertools.product(alpha_grid, eta_grid, passes_grid, topics_grid, no_below_dict,
                           no_above_dict, chunksize, iterations))
 
 
@@ -36,12 +36,13 @@ def run_model_with_grid_search(results_dir, docs,
     print(f"number of models to run: {len(params_list)}")
     for params in params_list:
         params_dict = {"alpha": params[0],
-                       "passes": params[1],
-                       "num_topics": params[2],
-                       "no_below_int": params[3],
-                       "no_above_percent": params[4],
-                       "chunksize": params[5],
-                       "iterations": params[6],
+                       "eta" : params[1],
+                       "passes": params[2],
+                       "num_topics": params[3],
+                       "no_below_int": params[4],
+                       "no_above_percent": params[5],
+                       "chunksize": params[6],
+                       "iterations": params[7],
                        "eval_every": None,
                        }
         print(
@@ -91,11 +92,24 @@ if __name__ == "__main__":
         iterations = int(input("iterations"))
         alpha_min = float(input("alpha min"))
         alpha_max = float(input("alpha max"))
+        eta_min = float(input("eta min"))
+        eta_max = float(input("eta max"))
         passes_min = int(input("passes min"))
         passes_max = int(input("passes max"))
         topics_min = int(input("topics min"))
         topics_max = int(input("topics max"))
-        alphas = alpha_grid(alpha_min, alpha_max)
+        alpha_auto = input("is alpha auto? Y or N")
+        eta_auto = input("is eta auto? Y or N")
+
+        if alpha_auto == "Y":
+            alphas = ["auto"]
+        else:
+            alphas = alpha_grid(alpha_min, alpha_max)
+        if eta_auto == "Y":
+            etas = ["auto"]
+        else:
+            etas = alpha_grid(eta_min, eta_max)
+
         passes = passes_grid(passes_min, passes_max)
         topics = topics_grid(topics_min, topics_max)
         data = {"no_below_int": no_below_int, "no_above_p": no_above_p,
@@ -108,7 +122,7 @@ if __name__ == "__main__":
     chunksize_params = [data["chunksize"]]
     iterations_params = [data["iterations"]]
 
-    params_list = grid_params_lists(alphas, passes, topics,
+    params_list = grid_params_lists(alphas, etas, passes, topics,
                                     [data["no_below_int"]],
                                     [data["no_above_p"]], [data["chunksize"]],
                                     [data["iterations"]])
