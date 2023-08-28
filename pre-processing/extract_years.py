@@ -60,5 +60,7 @@ if __name__ == "__main__":
     source_dir = input("insert source files path to extract years from")
     results_dir = input("insert results files path")
     df = run(source_dir)
+    df[['max_year', 'num_years']] = df.apply(
+        lambda row: max_year(row['Years']), axis=1, result_type='expand')
     results_path_name = os.path.join(results_dir, f"extract_years_{int(time.time())}.xlsx")
     df.to_excel(results_path_name)
