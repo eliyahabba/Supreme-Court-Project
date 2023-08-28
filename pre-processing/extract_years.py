@@ -50,7 +50,7 @@ def run(directory_path):
                 text = file.read()
                 years = find_years(text)
                 data['filename'].append(filename)
-                data['Text'].append(text[:200]) # sample
+                #data['Text'].append(text[:200]) # sample
                 data['Years'].append(', '.join(years))
             except:
                 print(file_path)
