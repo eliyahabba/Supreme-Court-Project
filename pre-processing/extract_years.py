@@ -41,7 +41,7 @@ def max_year(years):
 
 
 def run(directory_path):
-    data = {'Text': [], 'filename': [], 'Years': []}
+    data = {'filename': [], 'Years': []}
     for filename in os.listdir(directory_path):
         #     if filename.endswith('.txt'):
         file_path = os.path.join(directory_path, filename)
@@ -50,7 +50,6 @@ def run(directory_path):
                 text = file.read()
                 years = find_years(text)
                 data['filename'].append(filename)
-                #data['Text'].append(text[:200]) # sample
                 data['Years'].append(', '.join(years))
             except:
                 print(file_path)
