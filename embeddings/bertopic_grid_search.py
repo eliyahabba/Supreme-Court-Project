@@ -30,7 +30,8 @@ def run_bertopic(data, directory_path,
                  custom_embedder, ctfidf_model,
                  vectorizer_model, min_topic_size):
     topic_model = BERTopic(embedding_model=custom_embedder, ctfidf_model=ctfidf_model,
-                           vectorizer_model=vectorizer_model, min_topic_size=min_topic_size)
+                           vectorizer_model=vectorizer_model, min_topic_size=min_topic_size,
+                           calculate_probabilities=True)
     topics, probs = topic_model.fit_transform(data)
 
     topic_model.save(directory_path, serialization="safetensors", save_ctfidf=True)
