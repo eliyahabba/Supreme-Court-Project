@@ -6,9 +6,9 @@ from bertopic.vectorizers import ClassTfidfTransformer
 from sklearn.feature_extraction.text import CountVectorizer
 from transformers import pipeline
 
-from preprocessing.extract_content import get_documents_content
-from embeddings.custom_embedders.mean_pooling_embedder import MeanPoolingEmbedder
-from embeddings.custom_embedders.truncating_embedder import TruncatingEmbedder
+from extract_content import get_documents_content
+from custom_embedders.mean_pooling_embedder import MeanPoolingEmbedder
+from custom_embedders.truncating_embedder import TruncatingEmbedder
 
 
 def get_params():
