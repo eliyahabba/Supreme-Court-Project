@@ -47,6 +47,7 @@ def run_bertopic_grid_search(data, base_directory, parameter_combinations, embed
             directory_name = f"{model_name.replace('/', '_')}_custom{custom_embedding_class.__name__}_ctfidf{use_ctfidf}_vector{use_vector}_minsize{min_topic_size}/"
             directory_path = os.path.join(base_directory, directory_name)
 
+            print(f"Model {idx + 1} start")
             os.makedirs(directory_path, exist_ok=True)
 
             pipe = pipeline('feature-extraction', model=model_name, device='cuda:0')
@@ -62,14 +63,17 @@ def run_bertopic_grid_search(data, base_directory, parameter_combinations, embed
 
 
 if __name__ == '__main__':
+    print("Extracting data")
     directory_path = "/mnt/local/mikehash/Data/Nevo/NevoVerdicts"
     df = get_documents_content(directory_path)
     data = df['extracted_content'].values.tolist()
 
     base_directory = "/mnt/local/mikehash/Embeddings/Results"
 
+    print("Getting parameters")
     parameter_combinations, embedding_mapping = get_params()
 
     stop_words = open('../preprocessing/heb_stopwords.txt', 'r').read().split()
 
+    print("Running BERTopic grid search")
     run_bertopic_grid_search(data, base_directory, parameter_combinations, embedding_mapping, stop_words)
