@@ -8,7 +8,7 @@ from transformers.pipelines import Pipeline
 from bertopic.backend import BaseEmbedder
 
 
-class CustomEmbedder(BaseEmbedder):
+class TruncatingEmbedder(BaseEmbedder):
     def __init__(self, embedding_model: Pipeline):
         super().__init__()
 
@@ -38,8 +38,7 @@ class CustomEmbedder(BaseEmbedder):
         for document in tqdm(documents, total=len(documents), disable=not verbose):
             # Use the tokenizer provided by self.embedding_model
             tokens = self.embedding_model.tokenizer(document, truncation=True, padding=True, max_length=max_length, return_tensors="pt")
-            decoded_document = self.embedding_model.tokenizer.decode(tokens['input_ids'][0], skip_special_tokens=True)
-            truncated_document = document[:len(decoded_document) - 100]
+            truncated_document = self.embedding_model.tokenizer.decode(tokens['input_ids'][0][:-7], skip_special_tokens=True)
 
             # Get embeddings using the embedding model
             features = self.embedding_model(truncated_document, truncation=True, padding=True)
