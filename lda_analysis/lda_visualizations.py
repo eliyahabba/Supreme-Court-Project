@@ -58,6 +58,9 @@ def add_topic_display_names(data: pd.DataFrame, topic_mappings: pd.DataFrame, to
     else:
         data['topic_display'] = data[topic_col].astype(str)
     
+    # Add numeric topic column for proper sorting
+    data['topic_num'] = data[topic_col].astype(int)
+    
     return data
 
 
@@ -76,6 +79,10 @@ def plot_topics_trend(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame, min
         topic_display = filtered_data[filtered_data['strongest_topic'] == topic]['topic_display'].iloc[0]
         color_mapping[topic_display] = distinct_colors[i % len(distinct_colors)]
 
+    # Create category order for proper sorting in legend
+    sorted_topic_displays = [filtered_data[filtered_data['strongest_topic'] == topic]['topic_display'].iloc[0] 
+                           for topic in unique_topics]
+
     fig = px.line(
         filtered_data,
         x='year',
@@ -89,7 +96,8 @@ def plot_topics_trend(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame, min
         },
         width=1200,
         height=700,
-        color_discrete_map=color_mapping
+        color_discrete_map=color_mapping,
+        category_orders={'topic_display': sorted_topic_displays}
     )
 
     fig.update_layout(
@@ -102,7 +110,8 @@ def plot_topics_trend(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame, min
             yanchor="top",
             y=1,
             xanchor="left",
-            x=1.02
+            x=1.02,
+            traceorder="normal"
         )
     )
     
@@ -133,6 +142,10 @@ def plot_absolute_topics_trend(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataF
         topic_display = filtered_data[filtered_data['strongest_topic'] == topic]['topic_display'].iloc[0]
         color_mapping[topic_display] = distinct_colors[i % len(distinct_colors)]
 
+    # Create category order for proper sorting in legend
+    sorted_topic_displays = [filtered_data[filtered_data['strongest_topic'] == topic]['topic_display'].iloc[0] 
+                           for topic in unique_topics]
+
     fig = px.line(
         filtered_data,
         x='year',
@@ -146,7 +159,8 @@ def plot_absolute_topics_trend(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataF
         },
         width=1400,
         height=800,
-        color_discrete_map=color_mapping
+        color_discrete_map=color_mapping,
+        category_orders={'topic_display': sorted_topic_displays}
     )
 
     fig.update_layout(
@@ -159,7 +173,8 @@ def plot_absolute_topics_trend(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataF
             yanchor="top",
             y=1,
             xanchor="left",
-            x=1.02
+            x=1.02,
+            traceorder="normal"
         )
     )
     
@@ -182,7 +197,6 @@ def plot_topics_histogram(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame)
     topic_totals = add_topic_display_names(topic_totals, topic_mappings)
     
     # Sort by topic number for consistent order
-    topic_totals['topic_num'] = topic_totals['strongest_topic'].astype(int)
     topic_totals = topic_totals.sort_values('topic_num')
     
     # Generate colors
@@ -207,7 +221,8 @@ def plot_topics_histogram(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame)
         width=1200,
         height=600,
         color='topic_display',
-        color_discrete_map=color_mapping
+        color_discrete_map=color_mapping,
+        category_orders={'topic_display': topic_totals.sort_values('topic_num')['topic_display'].tolist()}
     )
 
     fig.update_layout(
@@ -237,47 +252,55 @@ def plot_stacked_yearly_distribution(yr_agg_df: pd.DataFrame, topic_mappings: pd
     distinct_colors = generate_distinct_colors(n_topics)
     
     color_mapping = {}
+    topic_order = {}  # To preserve numerical order in legend
     for i, topic in enumerate(unique_topics):
         topic_display = filtered_data[filtered_data['strongest_topic'] == topic]['topic_display'].iloc[0]
         color_mapping[topic_display] = distinct_colors[i % len(distinct_colors)]
+        topic_order[topic_display] = int(topic)
 
     fig = go.Figure()
     years = sorted(filtered_data['year'].unique())
     topics_in_legend = set()
     
-    for year in years:
-        year_data = filtered_data[filtered_data['year'] == year].copy()
-        year_data = year_data.sort_values('verdicts', ascending=False)
+    # Add traces sorted by topic number for consistent legend order
+    for topic in unique_topics:
+        topic_display = filtered_data[filtered_data['strongest_topic'] == topic]['topic_display'].iloc[0]
+        topic_num = int(topic)
         
-        cumulative_base = 0
-        
-        for _, row in year_data.iterrows():
-            topic_display = row['topic_display']
-            verdicts = row['verdicts']
-            color = color_mapping[topic_display]
+        for year in years:
+            year_data = filtered_data[(filtered_data['year'] == year) & 
+                                    (filtered_data['strongest_topic'] == topic)]
             
-            show_in_legend = topic_display not in topics_in_legend
-            if show_in_legend:
-                topics_in_legend.add(topic_display)
-            
-            topic_num = int(row['strongest_topic'])
-            
-            fig.add_trace(go.Bar(
-                x=[year],
-                y=[verdicts],
-                base=[cumulative_base],
-                name=topic_display,
-                marker_color=color,
-                hovertemplate=f'<b>{topic_display}</b><br>' +
-                             f'Year: {year}<br>' +
-                             f'Documents: {verdicts}<br>' +
-                             '<extra></extra>',
-                showlegend=show_in_legend,
-                legendgroup=topic_display,
-                legendrank=topic_num
-            ))
-            
-            cumulative_base += verdicts
+            if not year_data.empty:
+                verdicts = year_data['verdicts'].iloc[0]
+                color = color_mapping[topic_display]
+                
+                # Calculate cumulative base for this year
+                year_data_all = filtered_data[filtered_data['year'] == year].copy()
+                year_data_all = year_data_all.sort_values('topic_num')
+                cumulative_base = 0
+                for _, prior_row in year_data_all.iterrows():
+                    if int(prior_row['strongest_topic']) < topic_num:
+                        cumulative_base += prior_row['verdicts']
+                
+                show_in_legend = topic_display not in topics_in_legend
+                if show_in_legend:
+                    topics_in_legend.add(topic_display)
+                
+                fig.add_trace(go.Bar(
+                    x=[year],
+                    y=[verdicts],
+                    base=[cumulative_base],
+                    name=topic_display,
+                    marker_color=color,
+                    hovertemplate=f'<b>{topic_display}</b><br>' +
+                                 f'Year: {year}<br>' +
+                                 f'Documents: {verdicts}<br>' +
+                                 '<extra></extra>',
+                    showlegend=show_in_legend,
+                    legendgroup=topic_display,
+                    legendrank=topic_num
+                ))
 
     fig.update_layout(
         title=dict(
@@ -293,7 +316,8 @@ def plot_stacked_yearly_distribution(yr_agg_df: pd.DataFrame, topic_mappings: pd
             y=1,
             xanchor="left",
             x=1.02,
-            title="Topics (by number)"
+            title="Topics (by number)",
+            traceorder="normal"
         ),
         xaxis=dict(
             title='Year',
