@@ -148,6 +148,73 @@ def create_multi_topic_data(doc_mappings, years_df, threshold=0.3):
     return pd.DataFrame(), pd.DataFrame()
 
 
+def prepare_export_data(merged_df, topic_mappings, analysis_mode):
+    """Prepare clean data for export with topic titles and descriptions"""
+    if analysis_mode == "Single Topic":
+        # For single topic mode
+        export_data = merged_df[['filename', 'year', 'strongest_topic', 'strongest_topic_prob']].copy()
+        
+        # Add topic descriptions
+        if not topic_mappings.empty:
+            # Create mapping from the custom topics file
+            topic_title_map = {}
+            topic_desc_map = {}
+            for _, row in topic_mappings.iterrows():
+                topic_num = str(int(row['מספר נושא']))
+                topic_title_map[topic_num] = row['כותרת מוצעת']
+                topic_desc_map[topic_num] = row['רשימת המילים']
+            
+            # Add topic descriptions to export data
+            export_data['topic_title'] = export_data['strongest_topic'].map(topic_title_map)
+            export_data['topic_description'] = export_data['strongest_topic'].map(topic_desc_map)
+        else:
+            # Fallback to generic titles
+            export_data['topic_title'] = export_data['strongest_topic'].map(lambda x: f"Topic {x}")
+            export_data['topic_description'] = export_data['strongest_topic'].map(lambda x: f"Topic {x} words")
+        
+        # Fill any missing mappings
+        export_data['topic_title'] = export_data['topic_title'].fillna(
+            export_data['strongest_topic'].astype(str)
+        )
+        export_data['topic_description'] = export_data['topic_description'].fillna("No description available")
+        
+        return export_data
+    
+    else:
+        # For multi topic mode
+        export_data = merged_df[['filename', 'year', 'topic_id', 'topic_probability', 'is_strongest']].copy()
+        export_data.rename(columns={
+            'topic_id': 'strongest_topic',
+            'topic_probability': 'strongest_topic_prob'
+        }, inplace=True)
+        
+        # Add topic descriptions
+        if not topic_mappings.empty:
+            # Create mapping from the custom topics file
+            topic_title_map = {}
+            topic_desc_map = {}
+            for _, row in topic_mappings.iterrows():
+                topic_num = int(row['מספר נושא'])
+                topic_title_map[topic_num] = row['כותרת מוצעת']
+                topic_desc_map[topic_num] = row['רשימת המילים']
+            
+            # Add topic descriptions to export data
+            export_data['topic_title'] = export_data['strongest_topic'].map(topic_title_map)
+            export_data['topic_description'] = export_data['strongest_topic'].map(topic_desc_map)
+        else:
+            # Fallback to generic titles
+            export_data['topic_title'] = export_data['strongest_topic'].map(lambda x: f"Topic {x}")
+            export_data['topic_description'] = export_data['strongest_topic'].map(lambda x: f"Topic {x} words")
+        
+        # Fill any missing mappings
+        export_data['topic_title'] = export_data['topic_title'].fillna(
+            export_data['strongest_topic'].astype(str)
+        )
+        export_data['topic_description'] = export_data['topic_description'].fillna("No description available")
+        
+        return export_data
+
+
 def main():
     st.set_page_config(
         page_title="Supreme Court Topic Analysis",
@@ -276,13 +343,15 @@ def main():
     
     with col1:
         if st.button("💾 Download Processed Data"):
-            csv = merged_df.to_csv(index=False, encoding='utf-8-sig')
+            # Prepare clean export data
+            export_data = prepare_export_data(merged_df, topic_mappings, analysis_mode)
+            csv = export_data.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(
                 label="Download CSV",
                 data=csv,
                 file_name=f"lda_analysis_{analysis_mode.replace(' ', '_')}.csv",
                 mime="text/csv",
-                help="Processed data with topics and years"
+                help="Clean processed data with topics, years, and topic descriptions"
             )
     
     with col2:

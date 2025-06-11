@@ -310,11 +310,38 @@ class LDAFileGenerator:
 
         # Main processed data
         if 'topic_id' in self.merged_df.columns:
-            # Multi-topic export
-            processed_path = self.paths['output_dir'] / 'multi_topic_data.csv'
-            self.merged_df.to_csv(processed_path, index=False, encoding='utf-8-sig')
+            # Multi-topic export - clean format
+            export_data = self.merged_df[['filename', 'year', 'topic_id', 'topic_probability', 'is_strongest']].copy()
+            export_data.rename(columns={
+                'topic_id': 'strongest_topic',
+                'topic_probability': 'strongest_topic_prob'
+            }, inplace=True)
+            
+            # Add topic descriptions
+            if not self.topic_mappings.empty:
+                topic_title_map = {}
+                topic_desc_map = {}
+                for _, row in self.topic_mappings.iterrows():
+                    topic_num = int(row['מספר נושא'])
+                    topic_title_map[topic_num] = row['כותרת מוצעת']
+                    topic_desc_map[topic_num] = row['רשימת המילים']
+                
+                export_data['topic_title'] = export_data['strongest_topic'].map(topic_title_map)
+                export_data['topic_description'] = export_data['strongest_topic'].map(topic_desc_map)
+            else:
+                export_data['topic_title'] = export_data['strongest_topic'].map(lambda x: f"Topic {x}")
+                export_data['topic_description'] = export_data['strongest_topic'].map(lambda x: f"Topic {x} words")
+            
+            # Fill any missing mappings
+            export_data['topic_title'] = export_data['topic_title'].fillna(
+                export_data['strongest_topic'].astype(str)
+            )
+            export_data['topic_description'] = export_data['topic_description'].fillna("No description available")
+            
+            processed_path = self.paths['output_dir'] / 'comprehensive_topic_data.csv'
+            export_data.to_csv(processed_path, index=False, encoding='utf-8-sig')
         else:
-            # Single-topic export
+            # Single-topic export - clean format
             export_data = self.merged_df[['filename', 'year', 'strongest_topic', 'strongest_topic_prob']].copy()
             
             # Add topic descriptions
@@ -328,6 +355,15 @@ class LDAFileGenerator:
                 
                 export_data['topic_title'] = export_data['strongest_topic'].map(topic_title_map)
                 export_data['topic_description'] = export_data['strongest_topic'].map(topic_desc_map)
+            else:
+                export_data['topic_title'] = export_data['strongest_topic'].map(lambda x: f"Topic {x}")
+                export_data['topic_description'] = export_data['strongest_topic'].map(lambda x: f"Topic {x} words")
+            
+            # Fill any missing mappings
+            export_data['topic_title'] = export_data['topic_title'].fillna(
+                export_data['strongest_topic'].astype(str)
+            )
+            export_data['topic_description'] = export_data['topic_description'].fillna("No description available")
 
             processed_path = self.paths['output_dir'] / 'comprehensive_topic_data.csv'
             export_data.to_csv(processed_path, index=False, encoding='utf-8-sig')

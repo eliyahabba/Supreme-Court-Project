@@ -120,3 +120,100 @@ pip install streamlit
 ### ההבדל בין המצבים
 - **נושא יחיד**: כל מסמך משויך לנושא החזק ביותר בלבד
 - **רב נושאי**: מסמכים יכולים להיות מוקצים למספר נושאים (מעל הסף) 
+
+## פורמט יצוא הנתונים
+
+When you download data from either the Streamlit app or generate files with the script, you'll get clean CSV files with these columns:
+
+### Single Topic Mode Columns / עמודות במצב נושא יחיד:
+- `filename` - Document filename / שם קובץ המסמך
+- `year` - Document year / שנת המסמך  
+- `strongest_topic` - Topic ID number / מספר זהוי הנושא
+- `strongest_topic_prob` - Confidence score (0-1) / ציון ביטחון
+- `topic_title` - Hebrew topic title / כותרת הנושא בעברית
+- `topic_description` - Topic keywords and weights / מילות מפתח ומשקלים
+
+### Multi Topic Mode Columns / עמודות במצב נושאים מרובים:
+- `filename` - Document filename / שם קובץ המסמך
+- `year` - Document year / שנת המסמך
+- `strongest_topic` - Topic ID number / מספר זהוי הנושא  
+- `strongest_topic_prob` - Topic probability / הסתברות הנושא
+- `is_strongest` - Whether this is the strongest topic / האם זה הנושא החזק ביותר
+- `topic_title` - Hebrew topic title / כותרת הנושא בעברית
+- `topic_description` - Topic keywords and weights / מילות מפתח ומשקלים
+
+**Example CSV format / דוגמה לפורמט CSV:**
+```csv
+filename,year,strongest_topic,strongest_topic_prob,topic_title,topic_description
+21087770-A03.txt,2022,11,0.5849277,הליכים משפטיים,"0.012*""סף"" + 0.011*""הגשה"" + 0.011*""תיק""..."
+```
+
+## תיקיות פלט
+
+### Streamlit App / יישום Streamlit
+- Data downloads directly to browser / הורדת נתונים ישירות לדפדפן
+- Filenames include analysis mode / שמות קבצים כוללים מצב ניתוח
+
+### Static File Generation / יצירת קבצים סטטיים
+```
+data/results/lda/
+├── single_topic/                    # Single topic analysis / ניתוח נושא יחיד
+│   ├── comprehensive_topic_data.csv # Clean data export / יצוא נתונים נקי
+│   ├── topics_trend.html           # Relative trends / מגמות יחסיות
+│   ├── absolute_trends.html        # Absolute trends / מגמות מוחלטות
+│   ├── stacked_distribution.html   # Stacked charts / גרפים מוערמים
+│   ├── topics_histogram.html       # Topic histogram / היסטוגרמת נושאים
+│   ├── topics_wordcloud.png        # Word clouds / ענני מילים
+│   ├── comprehensive_analysis.html # Combined dashboard / דשבורד מכולל
+│   └── yearly_topic_aggregation.csv # Aggregated data / נתונים מצטברים
+└── multi_topic/                     # Multi topic analysis / ניתוח נושאים מרובים
+    └── [same structure as single_topic] / [אותה מבנה כמו single_topic]
+```
+
+## סוגי גרפים
+
+1. **Relative Trends / מגמות יחסיות** - Shows topic percentages over time / מציג אחוזי נושאים לאורך זמן
+2. **Absolute Trends / מגמות מוחלטות** - Shows document counts per topic / מציג מספר מסמכים לכל נושא  
+3. **Stacked Distribution / התפלגות מוערמת** - Shows yearly topic composition / מציג הרכב נושאים שנתי
+4. **Topic Histogram / היסטוגרמת נושאים** - Shows overall topic frequency / מציג תדירות נושאים כללית
+5. **Word Clouds / ענני מילים** - Visual representation of topic keywords / ייצוג ויזואלי של מילות מפתח
+
+## טיפים
+
+### For Streamlit App / ליישום Streamlit:
+- Use sidebar controls to filter data / השתמש בבקרות הצד לסינון נתונים
+- Download processed data for further analysis / הורד נתונים מעובדים לניתוח נוסף
+- Try different analysis modes to compare results / נסה מצבי ניתוח שונים להשוואת תוצאות
+
+### For File Generation / ליצירת קבצים:
+- Use `--mode both` to generate comprehensive comparison / השתמש ב-`--mode both` לייצור השוואה מקיפה
+- Adjust `--min-year` to focus on specific time periods / התאם `--min-year` להתמקדות בתקופות זמן ספציפיות
+- Check the comprehensive_analysis.html for best overview / בדוק את comprehensive_analysis.html לסקירה הטובה ביותר
+
+## פתרון בעיות
+
+### Common Issues / בעיות נפוצות:
+
+1. **"No data found" error / שגיאת "לא נמצאו נתונים"**
+   - Check that all required files exist / בדוק שכל הקבצים הנדרשים קיימים
+   - Verify file paths in error messages / אמת נתיבי קבצים בהודעות שגיאה
+
+2. **Hebrew text not displaying / טקסט עברי לא מוצג**
+   - Install Hebrew fonts on your system / התקן גופנים עבריים במערכת
+   - Use a browser that supports Hebrew / השתמש בדפדפן התומך בעברית
+
+3. **Streamlit won't start / Streamlit לא מתחיל**
+   - Check Python environment / בדוק סביבת Python
+   - Install missing dependencies / התקן תלותות חסרות
+   - Try running from project root / נסה להריץ מתיקיית הפרויקט הראשית
+
+4. **Charts not loading / גרפים לא נטענים**
+   - Check browser console for errors / בדוק קונסולת הדפדפן לשגיאות
+   - Clear browser cache / נקה מטמון הדפדפן
+   - Try different browser / נסה דפדפן אחר
+
+### קבלת עזרה:
+
+- Check error messages carefully / בדוק הודעות שגיאה בקפידה
+- Ensure all data files are in correct locations / וודא שכל קבצי הנתונים במיקומים הנכונים
+- Verify Python environment has required packages / אמת שסביבת Python כוללת חבילות נדרשות 
