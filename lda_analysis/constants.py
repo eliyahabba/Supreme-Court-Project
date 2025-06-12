@@ -18,7 +18,7 @@ from pathlib import Path
 DEFAULT_PATHS = {
     'lda_model_dir': Path('LDA Best Result') / '1693294471',
     'years_data': Path('data') / 'processed' / 'extracted_years.csv',
-    'custom_topics': Path('LDA Best Result') / '1693294471' / 'topics_with_claude.csv',
+    'custom_topics': Path('LDA Best Result') / '1693294471' / 'topics_of_renana.csv',
     'output_dir': Path('data') / 'results' / 'lda'
 }
 
