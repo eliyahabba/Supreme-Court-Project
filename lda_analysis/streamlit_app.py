@@ -5,14 +5,27 @@ Streamlit App for LDA Analysis
 =============================
 
 Interactive web app for viewing LDA topic analysis results.
+Updated to support topic filtering using shared constants.
 """
 
 import warnings
 from pathlib import Path
+from typing import List, Optional
 
 import pandas as pd
 import streamlit as st
 from gensim import models
+
+# Import shared constants
+from constants import (
+    DEFAULT_PATHS, DEFAULT_EXCLUDED_TOPICS, DEFAULT_INCLUDED_TOPICS, DEFAULT_MIN_YEAR,
+    DEFAULT_MULTI_TOPIC_THRESHOLD, DEFAULT_TOP_K_TOPICS, DEFAULT_ENCODING
+)
+from utils import (
+    get_project_root, get_full_paths, filter_topics_from_data, get_filtered_topic_mappings, 
+    print_filtering_info, check_file_length_constants
+)
+from file_length_filter import filter_lda_input_data, print_filtering_summary
 
 from lda_visualizations import (
     create_wordcloud_grid,
@@ -26,26 +39,35 @@ warnings.filterwarnings('ignore')
 
 
 @st.cache_data
-def load_lda_data():
-    """Load LDA model and data with caching"""
-    # Setup paths
-    project_root = Path.cwd()
-    if project_root.name == 'lda_analysis':
-        project_root = project_root.parent
-
-    paths = {
-        'lda_model_dir': project_root / 'LDA Best Result' / '1693294471',
-        'years_data': project_root / 'data' / 'processed' / 'extracted_years.csv',
-        'custom_topics': project_root / 'LDA Best Result' / '1693294471' / 'topics_with_claude.csv'
-    }
+def load_lda_data(apply_length_filter=True):
+    """Load LDA model and data with caching and optional file length filtering"""
+    # Setup paths using constants
+    project_root = get_project_root()
+    paths = get_full_paths(project_root)
     
     # Load model
     model_path = paths['lda_model_dir'] / "model"
     model = models.ldamodel.LdaModel.load(str(model_path))
     
-    # Load document mappings
+    # Load document mappings and years data  
     doc_mappings_path = paths['lda_model_dir'] / "docs_topics.csv"
-    doc_mappings = pd.read_csv(doc_mappings_path)
+    doc_mappings_original = pd.read_csv(doc_mappings_path)
+    years_df_original = pd.read_csv(paths['years_data'])
+    
+    # Apply file length filtering if requested
+    if apply_length_filter:
+        try:
+            doc_mappings, years_df, filtering_stats = filter_lda_input_data(
+                doc_mappings_original, years_df_original
+            )
+            st.info(f"📏 File Length Filtering Applied: {filtering_stats['initial_count']:,} → {filtering_stats['final_count']:,} files ({filtering_stats['removed_count']:,} removed)")
+        except Exception as e:
+            st.warning(f"⚠️ File length filtering failed: {e}. Using all files.")
+            doc_mappings = doc_mappings_original
+            years_df = years_df_original
+    else:
+        doc_mappings = doc_mappings_original  
+        years_df = years_df_original
     
     # Load topic mappings
     if paths['custom_topics'].exists():
@@ -53,14 +75,11 @@ def load_lda_data():
     else:
         topic_mappings = pd.DataFrame()
     
-    # Load years data
-    years_df = pd.read_csv(paths['years_data'])
-    
     return model, doc_mappings, topic_mappings, years_df
 
 
-def create_single_topic_data(doc_mappings, years_df):
-    """Create single-topic analysis data"""
+def create_single_topic_data(doc_mappings, years_df, excluded_topics=None, included_topics=None):
+    """Create single-topic analysis data with topic filtering"""
     # Merge with years
     merged_df = years_df.merge(doc_mappings, on='filename', how='inner')
     
@@ -76,6 +95,12 @@ def create_single_topic_data(doc_mappings, years_df):
     
     merged_df['year'] = merged_df['max_year'].astype(int)
     
+    # Apply topic filtering
+    merged_df = filter_topics_from_data(merged_df, excluded_topics, included_topics, 'strongest_topic')
+    
+    if merged_df.empty:
+        return merged_df, pd.DataFrame()
+    
     # Create aggregated data
     yr_topic_agg = merged_df.groupby(['year', 'strongest_topic']).size().reset_index(name='verdicts')
     yr_total = merged_df.groupby(['year']).size().reset_index(name='total_verdicts')
@@ -85,8 +110,9 @@ def create_single_topic_data(doc_mappings, years_df):
     return merged_df, yr_agg_df
 
 
-def create_multi_topic_data(doc_mappings, years_df, threshold=0.3):
-    """Create multi-topic analysis data"""
+def create_multi_topic_data(doc_mappings, years_df, threshold=DEFAULT_MULTI_TOPIC_THRESHOLD,
+                          top_k=DEFAULT_TOP_K_TOPICS, excluded_topics=None, included_topics=None):
+    """Create multi-topic analysis data with topic filtering and top-K support"""
     topic_cols = [col for col in doc_mappings.columns if col.isdigit()]
     
     if not topic_cols:
@@ -96,32 +122,59 @@ def create_multi_topic_data(doc_mappings, years_df, threshold=0.3):
     
     for _, row in doc_mappings.iterrows():
         filename = row['filename']
-        topics_above_threshold = []
-        max_prob = -1
-        max_topic = None
-
+        
+        # Get all topic probabilities for this document (after filtering)
+        filtered_topics = []
         for topic_col in topic_cols:
             topic_prob = row[topic_col]
-            if topic_prob >= threshold:
-                topics_above_threshold.append((int(topic_col), topic_prob))
-            if topic_prob > max_prob:
-                max_prob = topic_prob
-                max_topic = int(topic_col)
-
+            topic_id = int(topic_col)
+            
+            # Apply topic filtering
+            if included_topics is not None and topic_id not in included_topics:
+                continue
+            if excluded_topics and topic_id in excluded_topics:
+                continue
+            
+            filtered_topics.append((topic_id, topic_prob))
+        
+        if not filtered_topics:
+            continue  # Skip if no topics passed filtering
+        
+        # Sort topics by probability (highest first)
+        filtered_topics.sort(key=lambda x: x[1], reverse=True)
+        
+        # Get topics above threshold
+        topics_above_threshold = [(topic_id, prob) for topic_id, prob in filtered_topics if prob >= threshold]
+        
+        # Get top-K topics (regardless of threshold)
+        top_k_topics = filtered_topics[:top_k]
+        
+        # Combine both approaches: use threshold OR top-K (whichever gives more topics)
         if topics_above_threshold:
-            for topic_id, topic_prob in topics_above_threshold:
-                multi_topic_data.append({
-                    'filename': filename,
-                    'topic_id': topic_id,
-                    'topic_probability': round(topic_prob, 4),
-                    'is_strongest': topic_prob == row[topic_cols].max()
-                })
+            # If we have topics above threshold, include all of them
+            selected_topics = topics_above_threshold
+            # But also ensure we have at least top-K if threshold gives us fewer
+            if len(topics_above_threshold) < top_k:
+                for topic_id, prob in top_k_topics:
+                    if (topic_id, prob) not in topics_above_threshold:
+                        selected_topics.append((topic_id, prob))
+                        if len(selected_topics) >= top_k:
+                            break
         else:
+            # If no topics above threshold, fall back to top-K
+            selected_topics = top_k_topics
+        
+        # Get the strongest topic for comparison
+        max_prob = filtered_topics[0][1] if filtered_topics else 0
+        
+        # Add selected topics to data
+        for topic_id, topic_prob in selected_topics:
             multi_topic_data.append({
                 'filename': filename,
-                'topic_id': max_topic,
-                'topic_probability': round(max_prob, 4),
-                'is_strongest': True
+                'topic_id': topic_id,
+                'topic_probability': round(topic_prob, 4),
+                'is_strongest': topic_prob == max_prob,
+                'selection_method': 'threshold' if topic_prob >= threshold else 'top_k'
             })
     
     multi_df = pd.DataFrame(multi_topic_data)
@@ -146,6 +199,28 @@ def create_multi_topic_data(doc_mappings, years_df, threshold=0.3):
         return multi_df, yr_agg_df
     
     return pd.DataFrame(), pd.DataFrame()
+
+
+def get_available_topics(model, topic_mappings):
+    """Get list of available topics for filtering interface"""
+    topics = []
+    for i in range(model.num_topics):
+        if not topic_mappings.empty:
+            # Try to find Hebrew name
+            topic_name = None
+            for _, row in topic_mappings.iterrows():
+                if int(row['מספר נושא']) == i:
+                    topic_name = row['כותרת מוצעת']
+                    break
+            
+            if topic_name:
+                topics.append(f"{i}: {topic_name}")
+            else:
+                topics.append(f"Topic {i}")
+        else:
+            topics.append(f"Topic {i}")
+    
+    return topics
 
 
 def prepare_export_data(merged_df, topic_mappings, analysis_mode):
@@ -224,18 +299,76 @@ def main():
     )
     
     st.title("⚖️ Supreme Court Topic Analysis")
-    st.markdown("### LDA Analysis of Court Verdicts")
+    st.markdown("### LDA Analysis of Court Verdicts with Topic and Length Filtering")
     
     # Sidebar for controls
     st.sidebar.header("🎛️ Settings")
     
+    # File length filtering option
+    st.sidebar.subheader("📏 File Length Filtering")
+    apply_length_filter = st.sidebar.checkbox(
+        "Apply file length filtering",
+        value=True,
+        help="Filter out files that are too short based on pre-calculated statistics"
+    )
+    
+    if apply_length_filter:
+        # Show file length constants if available
+        try:
+            check_file_length_constants()
+            st.sidebar.success("✅ File length filtering enabled")
+        except NameError:
+            st.sidebar.warning("⚠️ File length constants not set. Run analyze_file_lengths.py first.")
+            apply_length_filter = False
+    else:
+        st.sidebar.info("📄 Using all files regardless of length")
+    
     # Load data
     with st.spinner("Loading data..."):
         try:
-            model, doc_mappings, topic_mappings, years_df = load_lda_data()
+            model, doc_mappings, topic_mappings, years_df = load_lda_data(apply_length_filter)
         except Exception as e:
             st.error(f"Error loading data: {e}")
             st.stop()
+    
+    # Topic filtering section
+    st.sidebar.subheader("🎯 Topic Filtering")
+    
+    # Get available topics
+    available_topics = get_available_topics(model, topic_mappings)
+    topic_numbers = list(range(model.num_topics))
+    
+    # Filtering mode selection
+    filter_mode = st.sidebar.radio(
+        "Filtering Mode:",
+        ["Exclude Topics", "Include Only", "No Filtering"],
+        help="Choose how to filter topics"
+    )
+    
+    excluded_topics = None
+    included_topics = None
+    
+    if filter_mode == "Exclude Topics":
+        # Topic exclusion interface
+        default_excluded = [i for i in DEFAULT_EXCLUDED_TOPICS if i < model.num_topics]
+        excluded_indices = st.sidebar.multiselect(
+            "Topics to Exclude:",
+            options=topic_numbers,
+            default=default_excluded,
+            format_func=lambda x: available_topics[x],
+            help=f"Default excludes topics: {DEFAULT_EXCLUDED_TOPICS}"
+        )
+        excluded_topics = excluded_indices if excluded_indices else None
+        
+    elif filter_mode == "Include Only":
+        # Topic inclusion interface  
+        included_indices = st.sidebar.multiselect(
+            "Topics to Include:",
+            options=topic_numbers,
+            format_func=lambda x: available_topics[x],
+            help="If selected, only these topics will be analyzed"
+        )
+        included_topics = included_indices if included_indices else None
     
     # Analysis mode selection
     analysis_mode = st.sidebar.selectbox(
@@ -249,32 +382,66 @@ def main():
         "Minimum Year:",
         min_value=int(years_df['max_year'].min()),
         max_value=int(years_df['max_year'].max()),
-        value=1990,
+        value=DEFAULT_MIN_YEAR,
         step=1
     )
     
-    # Multi-topic threshold (only for multi-topic mode)
+    # Multi-topic parameters (only for multi-topic mode)
     if analysis_mode == "Multi Topic":
         threshold = st.sidebar.slider(
             "Topic Inclusion Threshold:",
-            min_value=0.1,
+            min_value=0.05,
             max_value=0.8,
-            value=0.3,
+            value=DEFAULT_MULTI_TOPIC_THRESHOLD,
             step=0.05,
             help="Minimum probability threshold for including a topic in a document"
         )
+        
+        top_k = st.sidebar.slider(
+            "Top-K Topics per Document:",
+            min_value=1,
+            max_value=10,
+            value=DEFAULT_TOP_K_TOPICS,
+            step=1,
+            help="Number of top topics to include per document (regardless of threshold)"
+        )
+        
+        st.sidebar.info(f"📋 Documents will include topics above {threshold:.2f} threshold OR top-{top_k} topics (whichever gives more)")
+    else:
+        threshold = DEFAULT_MULTI_TOPIC_THRESHOLD
+        top_k = DEFAULT_TOP_K_TOPICS
+    
+    # Display filtering info
+    if excluded_topics:
+        st.sidebar.info(f"🚫 Excluding topics: {excluded_topics}")
+    elif included_topics:
+        st.sidebar.info(f"✅ Including only topics: {included_topics}")
+    else:
+        st.sidebar.info("📊 No topic filtering applied")
     
     # Process data based on selected mode
     with st.spinner("Processing data..."):
         if analysis_mode == "Single Topic":
-            merged_df, yr_agg_df = create_single_topic_data(doc_mappings, years_df)
+            merged_df, yr_agg_df = create_single_topic_data(doc_mappings, years_df, excluded_topics, included_topics)
+            if merged_df.empty:
+                st.error("No data found after applying topic filters")
+                st.stop()
             mode_info = f"Single Topic - {len(merged_df)} documents"
         else:
-            merged_df, yr_agg_df = create_multi_topic_data(doc_mappings, years_df, threshold)
+            merged_df, yr_agg_df = create_multi_topic_data(doc_mappings, years_df, threshold, top_k, excluded_topics, included_topics)
             if merged_df.empty:
-                st.error("No data found for multi-topic analysis with the selected threshold")
+                st.error("No data found for multi-topic analysis with the selected parameters and filters")
                 st.stop()
-            mode_info = f"Multi Topic - {len(merged_df)} topic-document pairs ({merged_df['filename'].nunique()} unique documents)"
+            
+            # Enhanced info for multi-topic
+            unique_docs = merged_df['filename'].nunique()
+            avg_topics_per_doc = len(merged_df) / unique_docs if unique_docs > 0 else 0
+            threshold_count = len(merged_df[merged_df.get('selection_method', '') == 'threshold']) if 'selection_method' in merged_df.columns else 0
+            top_k_count = len(merged_df[merged_df.get('selection_method', '') == 'top_k']) if 'selection_method' in merged_df.columns else 0
+            
+            mode_info = f"Multi Topic - {len(merged_df)} topic-document pairs ({unique_docs} unique documents, avg {avg_topics_per_doc:.1f} topics/doc)"
+            if 'selection_method' in merged_df.columns:
+                mode_info += f"\n📊 Selected by threshold: {threshold_count}, by top-K: {top_k_count}"
     
     # Display basic info
     st.sidebar.markdown("---")
@@ -297,7 +464,7 @@ def main():
         st.markdown("This chart shows how the relative importance of each topic changes over time as a percentage")
         
         with st.spinner("Creating relative trends chart..."):
-            fig1 = plot_topics_trend(yr_agg_df, topic_mappings, min_year)
+            fig1 = plot_topics_trend(yr_agg_df, topic_mappings, min_year, excluded_topics, included_topics)
             st.plotly_chart(fig1, use_container_width=True)
     
     with tab2:
@@ -305,7 +472,7 @@ def main():
         st.markdown("This chart shows the actual number of documents for each topic over time")
         
         with st.spinner("Creating absolute trends chart..."):
-            fig2 = plot_absolute_topics_trend(yr_agg_df, topic_mappings, min_year)
+            fig2 = plot_absolute_topics_trend(yr_agg_df, topic_mappings, min_year, excluded_topics, included_topics)
             st.plotly_chart(fig2, use_container_width=True)
     
     with tab3:
@@ -313,7 +480,7 @@ def main():
         st.markdown("This chart shows the total document volume per year and the distribution of topics within each year")
         
         with st.spinner("Creating stacked distribution chart..."):
-            fig3 = plot_stacked_yearly_distribution(yr_agg_df, topic_mappings, min_year)
+            fig3 = plot_stacked_yearly_distribution(yr_agg_df, topic_mappings, min_year, excluded_topics, included_topics)
             st.plotly_chart(fig3, use_container_width=True)
     
     with tab4:
@@ -321,7 +488,7 @@ def main():
         st.markdown("This chart shows the total number of documents for each topic across all years")
         
         with st.spinner("Creating histogram..."):
-            fig4 = plot_topics_histogram(yr_agg_df, topic_mappings)
+            fig4 = plot_topics_histogram(yr_agg_df, topic_mappings, excluded_topics, included_topics)
             st.plotly_chart(fig4, use_container_width=True)
     
     with tab5:
@@ -330,7 +497,7 @@ def main():
         
         with st.spinner("Creating word clouds..."):
             try:
-                fig5 = create_wordcloud_grid(model, topic_mappings)
+                fig5 = create_wordcloud_grid(model, topic_mappings, excluded_topics, included_topics)
                 st.pyplot(fig5, use_container_width=True)
             except Exception as e:
                 st.error(f"Error creating word clouds: {e}")

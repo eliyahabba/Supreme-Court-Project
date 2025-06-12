@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-LDA Model Analysis Script - Updated Version
-=========================================
+LDA Model Analysis Script - Updated Version with File Length Filtering
+=====================================================================
 
 Detailed analysis of LDA model selected based on its coherence score.
 The script is organized with functions and relative paths for improved convenience and maintenance.
@@ -15,6 +15,26 @@ Features:
 - ✅ Modern Python methods with type hints
 - ✅ Interactive visualizations with Plotly
 - ✅ Hebrew text support in word clouds
+- ✅ File length filtering support (NEW!)
+
+File Length Filtering:
+- Automatically filters out files that are too short for meaningful analysis
+- Uses pre-calculated statistics from sample files to determine minimum word threshold
+- Can be disabled with --no-length-filter flag
+
+Usage Examples:
+    # Run with file length filtering (default)
+    python lda_analysis.py --mode both
+    
+    # Run without file length filtering
+    python lda_analysis.py --mode both --no-length-filter
+    
+    # Run only single-topic analysis with filtering
+    python lda_analysis.py --mode single
+
+Prerequisites for file length filtering:
+    1. Run: cd ../lda_analysis && python analyze_file_lengths.py
+    2. This will analyze sample files and set up filtering constants
 
 Author: Updated analysis script
 Date: 2024
@@ -23,6 +43,7 @@ Date: 2024
 import logging
 import math
 import warnings
+import sys
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -36,6 +57,20 @@ from gensim import models
 from gensim.models import LdaModel
 from wordcloud import WordCloud
 
+# Add lda_analysis module to path for importing shared components
+sys.path.append(str(Path(__file__).parent.parent / 'lda_analysis'))
+
+try:
+            from utils import check_file_length_constants
+    from file_length_filter import filter_lda_input_data, print_filtering_summary
+    print("✅ Imported file length filtering modules")
+except ImportError as e:
+    print(f"⚠️ Could not import file length filtering: {e}")
+    print("File length filtering will be disabled.")
+    filter_lda_input_data = None
+    print_filtering_summary = None
+    check_file_length_constants = None
+
 # Disable warnings for cleaner appearance
 warnings.filterwarnings('ignore')
 
@@ -47,14 +82,16 @@ logger = logging.getLogger(__name__)
 class LDAAnalyzer:
     """Class for LDA model analysis"""
 
-    def __init__(self, single_topic_mode: bool = None):
+    def __init__(self, single_topic_mode: bool = None, apply_length_filter: bool = True):
         """
         Initialize LDA analyzer.
         
         Args:
             single_topic_mode: If None, run both analyses. If True, only strongest topic. If False, multi-topic.
+            apply_length_filter: Whether to apply file length filtering
         """
         self.single_topic_mode = single_topic_mode
+        self.apply_length_filter = apply_length_filter
         self.setup_paths()
         
         # Initialize data containers
@@ -73,7 +110,7 @@ class LDAAnalyzer:
             self.project_root = self.project_root.parent
 
         # Base output directory with mode suffix
-        output_dir = self.project_root / 'data' / 'results'
+        output_dir = self.project_root / 'data' / 'results' / 'lda'
         if mode_suffix:
             output_dir = output_dir / mode_suffix
 
@@ -96,7 +133,7 @@ class LDAAnalyzer:
 
     def load_lda_model(self) -> Tuple[LdaModel, pd.DataFrame, pd.DataFrame]:
         """
-        Load LDA model and related data files.
+        Load LDA model and related data files with optional file length filtering.
         
         Returns:
             Tuple of (model, doc_mappings, topic_mappings)
@@ -108,9 +145,9 @@ class LDAAnalyzer:
             model_path = self.paths['lda_model_dir'] / "model"
             self.model = models.ldamodel.LdaModel.load(str(model_path))
 
-            # Load document mappings
+            # Load document mappings (original)
             doc_mappings_path = self.paths['lda_model_dir'] / "docs_topics.csv"
-            self.doc_mappings = pd.read_csv(doc_mappings_path)
+            doc_mappings_original = pd.read_csv(doc_mappings_path)
 
             # Load topic mappings - try custom topics first, then fallback to Excel
             if self.paths['custom_topics'].exists():
@@ -128,7 +165,38 @@ class LDAAnalyzer:
                     self.topic_mappings = pd.DataFrame()
 
             print(f"✅ Loaded LDA model with {self.model.num_topics} topics")
-            print(f"✅ Loaded {len(self.doc_mappings)} document mappings")
+            print(f"✅ Loaded {len(doc_mappings_original)} document mappings")
+
+            # Apply file length filtering if enabled and available
+            if self.apply_length_filter and filter_lda_input_data is not None:
+                print("\n📏 Applying file length filtering...")
+                try:
+                    if check_file_length_constants is not None:
+                        check_file_length_constants()
+                    
+                    # Load years data for filtering
+                    years_df_original = pd.read_csv(self.paths['years_data'])
+                    
+                    # Apply filtering
+                    self.doc_mappings, years_filtered, filtering_stats = filter_lda_input_data(
+                        doc_mappings_original, years_df_original
+                    )
+                    
+                    if print_filtering_summary is not None:
+                        print_filtering_summary(filtering_stats)
+                        
+                except Exception as e:
+                    print(f"⚠️ File length filtering failed: {e}")
+                    print("Continuing with all files...")
+                    self.doc_mappings = doc_mappings_original
+            else:
+                if not self.apply_length_filter:
+                    print("📄 File length filtering disabled")
+                else:
+                    print("⚠️ File length filtering modules not available")
+                self.doc_mappings = doc_mappings_original
+
+            print(f"✅ Final document mappings: {len(self.doc_mappings)}")
 
             return self.model, self.doc_mappings, self.topic_mappings
 
@@ -686,17 +754,34 @@ class LDAAnalyzer:
             
             for _, row in self.doc_mappings.iterrows():
                 filename = row['filename']
-                
-                # Find all topics above threshold
+                topics_above_threshold = []
+                max_prob = -1
+                max_topic = None
+
                 for topic_col in topic_cols:
                     topic_prob = row[topic_col]
                     if topic_prob >= threshold:
+                        topics_above_threshold.append((int(topic_col), topic_prob))
+                    if topic_prob > max_prob:
+                        max_prob = topic_prob
+                        max_topic = int(topic_col)
+
+                if topics_above_threshold:
+                    for topic_id, topic_prob in topics_above_threshold:
                         multi_topic_data.append({
                             'filename': filename,
-                            'topic_id': int(topic_col),
+                            'topic_id': topic_id,
                             'topic_probability': round(topic_prob, 4),
                             'is_strongest': topic_prob == row[topic_cols].max()
                         })
+                else:
+                    # No topic above threshold: add the strongest topic anyway
+                    multi_topic_data.append({
+                        'filename': filename,
+                        'topic_id': max_topic,
+                        'topic_probability': round(max_prob, 4),
+                        'is_strongest': True
+                    })
             
             multi_df = pd.DataFrame(multi_topic_data)
             
@@ -994,8 +1079,8 @@ class LDAAnalyzer:
             print("\n" + "=" * 70)
             print("🎉 BOTH ANALYSES COMPLETED!")
             print("📁 Results saved in separate directories:")
-            print(f"   Single-topic: {self.project_root / 'data' / 'results' / 'single_topic'}")
-            print(f"   Multi-topic:  {self.project_root / 'data' / 'results' / 'multi_topic'}")
+            print(f"   Single-topic: {self.project_root / 'data' / 'results' / 'lda' / 'single_topic'}")
+            print(f"   Multi-topic:  {self.project_root / 'data' / 'results' / 'lda' / 'multi_topic'}")
             print("🔍 Compare results between directories to see the differences!")
             
         elif self.single_topic_mode:
@@ -1397,12 +1482,14 @@ class LDAAnalyzer:
 
 
 def main():
-    """Main function"""
+    """Main function with file length filtering support"""
     import argparse
     
-    parser = argparse.ArgumentParser(description="LDA Model Analysis")
+    parser = argparse.ArgumentParser(description="LDA Model Analysis with File Length Filtering")
     parser.add_argument('--mode', choices=['single', 'multi', 'both'], default='both',
                        help='Analysis mode: single (strongest topic only), multi (all significant topics), both (run both analyses)')
+    parser.add_argument('--no-length-filter', action='store_true',
+                       help='Disable file length filtering (include all files regardless of length)')
     args = parser.parse_args()
     
     # Convert mode to single_topic_mode parameter
@@ -1416,11 +1503,16 @@ def main():
         single_topic_mode = None
         print("🎯 Running BOTH analyses (default)")
     
+    # Set up file length filtering
+    apply_length_filter = not args.no_length_filter
+    
     print("🔬 LDA Model Analysis")
     print("=" * 50)
+    print(f"📊 Analysis mode: {args.mode}")
+    print(f"📏 File length filtering: {'Enabled' if apply_length_filter else 'Disabled'}")
 
     try:
-        analyzer = LDAAnalyzer(single_topic_mode=single_topic_mode)
+        analyzer = LDAAnalyzer(single_topic_mode=single_topic_mode, apply_length_filter=apply_length_filter)
         analyzer.run_full_analysis()
 
     except Exception as e:

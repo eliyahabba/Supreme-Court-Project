@@ -57,7 +57,7 @@ streamlit run streamlit_app.py
 ```bash
 cd lda_analysis
 
-# שני המצבים
+# שני המצבים (עם סינון אורך קבצים - ברירת מחדל)
 python generate_analysis_files.py --mode both
 
 # רק נושא יחיד
@@ -68,6 +68,39 @@ python generate_analysis_files.py --mode multi
 
 # עם שנה מינימלית
 python generate_analysis_files.py --mode both --min-year 1990
+
+# ללא סינון אורך קבצים (כלול את כל הקבצים)
+python generate_analysis_files.py --mode both --no-length-filter
+```
+
+### 📏 סינון אורך קבצים (תכונה חדשה!)
+
+לפני הפעלת הניתוח, מומלץ לבצע ניתוח אורך הקבצים:
+
+```bash
+# בדרך הקלה
+./run_file_analysis.sh
+
+# או ידנית
+python analyze_file_lengths.py
+```
+
+זה ייצור סף אוטומטי לסינון קבצים קצרים מדי. ראה `README_FILE_LENGTH_FILTERING.md` לפרטים מלאים.
+
+### 📝 שימוש בקובץ הגדול (notebooks/lda_analysis.py)
+
+הקובץ הגדול תומך גם בסינון אורך קבצים:
+
+```bash
+# עם סינון אורך (ברירת מחדל)
+cd notebooks
+python lda_analysis.py --mode both
+
+# ללא סינון אורך
+python lda_analysis.py --mode both --no-length-filter
+
+# רק ניתוח נושא יחיד עם סינון
+python lda_analysis.py --mode single
 ```
 
 ## תיקיות התוצאות

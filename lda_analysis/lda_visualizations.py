@@ -5,13 +5,14 @@ LDA Visualization Functions
 ==========================
 
 Extracted visualization functions for use in both Streamlit app and file generation.
+Updated to support topic filtering using shared constants.
 """
 
 import colorsys
 import math
 import warnings
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List, Optional
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -19,6 +20,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 from gensim.models import LdaModel
 from wordcloud import WordCloud
+
+# Import shared constants
+from constants import (
+    DEFAULT_CHART_WIDTH, DEFAULT_CHART_HEIGHT, WIDE_CHART_WIDTH, WIDE_CHART_HEIGHT,
+    COLOR_SATURATION_BASE, COLOR_VALUE_BASE
+)
+from utils import filter_topics_from_data, get_filtered_topic_mappings, print_filtering_info
 
 warnings.filterwarnings('ignore')
 
@@ -28,8 +36,8 @@ def generate_distinct_colors(n_colors: int) -> list:
     colors = []
     for i in range(n_colors):
         hue = i / n_colors
-        saturation = 0.8 + (i % 3) * 0.05
-        value = 0.7 + (i % 4) * 0.075
+        saturation = COLOR_SATURATION_BASE + (i % 3) * 0.05
+        value = COLOR_VALUE_BASE + (i % 4) * 0.075
         
         rgb = colorsys.hsv_to_rgb(hue, saturation, value)
         hex_color = '#{:02x}{:02x}{:02x}'.format(
@@ -42,13 +50,26 @@ def generate_distinct_colors(n_colors: int) -> list:
     return colors
 
 
-def add_topic_display_names(data: pd.DataFrame, topic_mappings: pd.DataFrame, topic_col: str = 'strongest_topic') -> pd.DataFrame:
-    """Add Hebrew topic display names to data"""
+def add_topic_display_names(data: pd.DataFrame, topic_mappings: pd.DataFrame, 
+                           topic_col: str = 'strongest_topic',
+                           excluded_topics: List[int] = None,
+                           included_topics: List[int] = None) -> pd.DataFrame:
+    """Add Hebrew topic display names to data and apply topic filtering"""
     data = data.copy()
     
-    if not topic_mappings.empty:
+    # Apply topic filtering first
+    data = filter_topics_from_data(data, excluded_topics, included_topics, topic_col)
+    
+    if data.empty:
+        print("⚠️ No data remaining after topic filtering")
+        return data
+    
+    # Filter topic mappings as well
+    filtered_topic_mappings = get_filtered_topic_mappings(topic_mappings, excluded_topics, included_topics)
+    
+    if not filtered_topic_mappings.empty:
         topic_name_map = {}
-        for _, row in topic_mappings.iterrows():
+        for _, row in filtered_topic_mappings.iterrows():
             topic_id = str(int(row['מספר נושא']))
             topic_name = row['כותרת מוצעת']
             topic_name_map[topic_id] = f"{topic_id}: {topic_name}"
@@ -64,10 +85,29 @@ def add_topic_display_names(data: pd.DataFrame, topic_mappings: pd.DataFrame, to
     return data
 
 
-def plot_topics_trend(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame, min_year: int = 1948) -> go.Figure:
+def plot_topics_trend(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame, 
+                     min_year: int = 1948,
+                     excluded_topics: List[int] = None,
+                     included_topics: List[int] = None) -> go.Figure:
     """Plot topic trends over years (percentages)"""
+    # Print filtering info
+    print_filtering_info(excluded_topics, included_topics)
+    
     filtered_data = yr_agg_df[yr_agg_df['year'] >= min_year].copy()
-    filtered_data = add_topic_display_names(filtered_data, topic_mappings)
+    filtered_data = add_topic_display_names(filtered_data, topic_mappings, 'strongest_topic', 
+                                          excluded_topics, included_topics)
+    
+    if filtered_data.empty:
+        # Return empty figure with message
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No data available after applying topic filters",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, xanchor='center', yanchor='middle',
+            showarrow=False, font=dict(size=16)
+        )
+        fig.update_layout(title="📈 Topic Trends - No Data", width=DEFAULT_CHART_WIDTH, height=DEFAULT_CHART_HEIGHT)
+        return fig
     
     # Sort topics and create colors
     unique_topics = sorted(filtered_data['strongest_topic'].unique(), key=lambda x: int(x))
@@ -94,8 +134,8 @@ def plot_topics_trend(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame, min
             'year': 'Year',
             'topic_display': 'Topic'
         },
-        width=1200,
-        height=700,
+        width=DEFAULT_CHART_WIDTH,
+        height=DEFAULT_CHART_HEIGHT,
         color_discrete_map=color_mapping,
         category_orders={'topic_display': sorted_topic_displays}
     )
@@ -127,10 +167,29 @@ def plot_topics_trend(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame, min
     return fig
 
 
-def plot_absolute_topics_trend(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame, min_year: int = 1948) -> go.Figure:
+def plot_absolute_topics_trend(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame, 
+                              min_year: int = 1948,
+                              excluded_topics: List[int] = None,
+                              included_topics: List[int] = None) -> go.Figure:
     """Plot absolute topic trends over years (number of documents)"""
+    # Print filtering info
+    print_filtering_info(excluded_topics, included_topics)
+    
     filtered_data = yr_agg_df[yr_agg_df['year'] >= min_year].copy()
-    filtered_data = add_topic_display_names(filtered_data, topic_mappings)
+    filtered_data = add_topic_display_names(filtered_data, topic_mappings, 'strongest_topic',
+                                          excluded_topics, included_topics)
+    
+    if filtered_data.empty:
+        # Return empty figure with message
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No data available after applying topic filters",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, xanchor='center', yanchor='middle',
+            showarrow=False, font=dict(size=16)
+        )
+        fig.update_layout(title="📊 Absolute Topic Trends - No Data", width=WIDE_CHART_WIDTH, height=WIDE_CHART_HEIGHT)
+        return fig
     
     # Sort topics and create colors
     unique_topics = sorted(filtered_data['strongest_topic'].unique(), key=lambda x: int(x))
@@ -157,8 +216,8 @@ def plot_absolute_topics_trend(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataF
             'year': 'Year',
             'topic_display': 'Topic'
         },
-        width=1400,
-        height=800,
+        width=WIDE_CHART_WIDTH,
+        height=WIDE_CHART_HEIGHT,
         color_discrete_map=color_mapping,
         category_orders={'topic_display': sorted_topic_displays}
     )
@@ -190,61 +249,100 @@ def plot_absolute_topics_trend(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataF
     return fig
 
 
-def plot_topics_histogram(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame) -> go.Figure:
+def plot_topics_histogram(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame,
+                         excluded_topics: List[int] = None,
+                         included_topics: List[int] = None) -> go.Figure:
     """Plot topic histogram for all years"""
+    # Print filtering info
+    print_filtering_info(excluded_topics, included_topics)
+    
     topic_totals = yr_agg_df.groupby('strongest_topic')['verdicts'].sum().reset_index()
     topic_totals['strongest_topic'] = topic_totals['strongest_topic'].astype(str)
-    topic_totals = add_topic_display_names(topic_totals, topic_mappings)
+    topic_totals = add_topic_display_names(topic_totals, topic_mappings, 'strongest_topic',
+                                         excluded_topics, included_topics)
+    
+    if topic_totals.empty:
+        # Return empty figure with message
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No data available after applying topic filters",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, xanchor='center', yanchor='middle',
+            showarrow=False, font=dict(size=16)
+        )
+        fig.update_layout(title="📊 Topic Distribution - No Data", width=DEFAULT_CHART_WIDTH, height=600)
+        return fig
     
     # Sort by topic number for consistent order
     topic_totals = topic_totals.sort_values('topic_num')
     
-    # Generate colors
+    # Generate distinct colors for all topics in sorted order
     n_topics = len(topic_totals)
     distinct_colors = generate_distinct_colors(n_topics)
     
+    # Create color mapping based on sorted topic order (not frequency)
     color_mapping = {}
     for i, row in topic_totals.iterrows():
         topic_display = row['topic_display']
-        topic_index = int(row['topic_num'])
+        topic_index = int(row['topic_num'])  # Use topic number for color consistency
         color_mapping[topic_display] = distinct_colors[topic_index % len(distinct_colors)]
 
     fig = px.bar(
         topic_totals,
         x='topic_display',
         y='verdicts',
-        title='📊 Topic Distribution - All Years',
+        title='📊 Topic Distribution for All Years',
         labels={
             'verdicts': 'Number of Verdicts',
             'topic_display': 'Topic'
         },
-        width=1200,
+        width=DEFAULT_CHART_WIDTH,  
         height=600,
         color='topic_display',
         color_discrete_map=color_mapping,
-        category_orders={'topic_display': topic_totals.sort_values('topic_num')['topic_display'].tolist()}
+        category_orders={'topic_display': topic_totals['topic_display'].tolist()}
     )
 
     fig.update_layout(
         title_x=0.5,
         template='plotly_white',
-        xaxis_tickangle=-45,
-        showlegend=False
+        xaxis_tickangle=-45,  # Rotate x-axis labels for better readability
+        showlegend=False  # Hide legend for histogram since x-axis shows the topics
     )
     
+    # Improve hover info
     fig.update_traces(
         hovertemplate='<b>%{x}</b><br>' +
                      'Documents: %{y}<br>' +
-                     '<extra></extra>'
+                     '<extra></extra>'  # Remove the default box
     )
 
     return fig
 
 
-def plot_stacked_yearly_distribution(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame, min_year: int = 1948) -> go.Figure:
+def plot_stacked_yearly_distribution(yr_agg_df: pd.DataFrame, topic_mappings: pd.DataFrame, 
+                                    min_year: int = 1948,
+                                    excluded_topics: List[int] = None,
+                                    included_topics: List[int] = None) -> go.Figure:
     """Plot stacked bar chart showing topic distribution by year"""
+    # Print filtering info
+    print_filtering_info(excluded_topics, included_topics)
+    
     filtered_data = yr_agg_df[yr_agg_df['year'] >= min_year].copy()
-    filtered_data = add_topic_display_names(filtered_data, topic_mappings)
+    filtered_data = add_topic_display_names(filtered_data, topic_mappings, 'strongest_topic',
+                                          excluded_topics, included_topics)
+    
+    if filtered_data.empty:
+        # Return empty figure with message
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No data available after applying topic filters",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, xanchor='center', yanchor='middle',
+            showarrow=False, font=dict(size=16)
+        )
+        fig.update_layout(title="📚 Stacked Distribution - No Data", width=WIDE_CHART_WIDTH, height=WIDE_CHART_HEIGHT)
+        return fig
 
     # Sort topics and create colors
     unique_topics = sorted(filtered_data['strongest_topic'].unique(), key=lambda x: int(x))
@@ -328,15 +426,22 @@ def plot_stacked_yearly_distribution(yr_agg_df: pd.DataFrame, topic_mappings: pd
         yaxis=dict(
             title='Number of Documents'
         ),
-        width=1400,
-        height=800
+                    width=WIDE_CHART_WIDTH,
+            height=WIDE_CHART_HEIGHT
     )
 
     return fig
 
 
-def create_wordcloud_grid(model: LdaModel, topic_mappings: pd.DataFrame) -> plt.Figure:
+def create_wordcloud_grid(model: LdaModel, topic_mappings: pd.DataFrame,
+                         excluded_topics: List[int] = None,
+                         included_topics: List[int] = None) -> plt.Figure:
     """Create a grid of word clouds for all topics"""
+    # Print filtering info
+    print_filtering_info(excluded_topics, included_topics)
+    
+    # Filter topic mappings
+    filtered_topic_mappings = get_filtered_topic_mappings(topic_mappings, excluded_topics, included_topics)
     # Hebrew fonts for different systems
     hebrew_fonts = [
         '/System/Library/Fonts/SFHebrew.ttf',

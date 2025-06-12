@@ -6,15 +6,28 @@ LDA Analysis - File Generation Script
 
 Script for generating LDA analysis files and reports.
 Uses shared visualization functions for consistency.
+Updated to support topic filtering using shared constants.
 """
 
 import logging
 import warnings
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Optional
+import argparse
 
 import pandas as pd
 from gensim import models
+
+# Import shared constants
+from constants import (
+    DEFAULT_PATHS, DEFAULT_EXCLUDED_TOPICS, DEFAULT_INCLUDED_TOPICS, DEFAULT_MIN_YEAR,
+    DEFAULT_MULTI_TOPIC_THRESHOLD, DEFAULT_TOP_K_TOPICS, DEFAULT_ENCODING
+)
+from utils import (
+    get_project_root, get_full_paths, filter_topics_from_data, get_filtered_topic_mappings,
+    print_filtering_info, check_file_length_constants
+)
+from file_length_filter import filter_lda_input_data, print_filtering_summary
 
 from lda_visualizations import (
     create_wordcloud_grid,
@@ -32,7 +45,20 @@ logger = logging.getLogger(__name__)
 class LDAFileGenerator:
     """Class for generating LDA analysis files"""
 
-    def __init__(self):
+    def __init__(self, excluded_topics: List[int] = None, included_topics: List[int] = None):
+        """
+        Initialize file generator with topic filtering options
+        
+        Args:
+            excluded_topics: List of topic IDs to exclude (default: from constants)
+            included_topics: List of topic IDs to include (if specified, only these will be analyzed)
+        """
+        self.excluded_topics = excluded_topics if excluded_topics is not None else DEFAULT_EXCLUDED_TOPICS
+        self.included_topics = included_topics
+        
+        # Print filtering configuration
+        print_filtering_info(self.excluded_topics, self.included_topics)
+        
         self.setup_paths()
         
         self.model = None
@@ -43,22 +69,13 @@ class LDAFileGenerator:
         self.yr_agg_df = pd.DataFrame()
 
     def setup_paths(self, mode_suffix: str = ""):
-        """Setup all required paths"""
-        self.project_root = Path.cwd()
-        if self.project_root.name == 'lda_analysis':
-            self.project_root = self.project_root.parent
-
-        output_dir = self.project_root / 'data' / 'results' / 'lda'
+        """Setup all required paths using shared constants"""
+        self.project_root = get_project_root()
+        self.paths = get_full_paths(self.project_root)
+        
+        # Add mode suffix to output directory if specified
         if mode_suffix:
-            output_dir = output_dir / mode_suffix
-
-        self.paths = {
-            'project_root': self.project_root,
-            'lda_model_dir': self.project_root / 'LDA Best Result' / '1693294471',
-            'output_dir': output_dir,
-            'years_data': self.project_root / 'data' / 'processed' / 'extracted_years.csv',
-            'custom_topics': self.project_root / 'LDA Best Result' / '1693294471' / 'topics_with_claude.csv'
-        }
+            self.paths['output_dir'] = self.paths['output_dir'] / mode_suffix
 
         self.paths['output_dir'].mkdir(parents=True, exist_ok=True)
 
@@ -67,8 +84,8 @@ class LDAFileGenerator:
             exists = "✅" if path.exists() else "❌"  
             print(f"  {key}: {exists} {path}")
 
-    def load_data(self):
-        """Load all required data"""
+    def load_data(self, apply_length_filter: bool = True):
+        """Load all required data with optional file length filtering"""
         print("🔄 Loading LDA model and data...")
 
         # Load model
@@ -77,7 +94,7 @@ class LDAFileGenerator:
 
         # Load document mappings
         doc_mappings_path = self.paths['lda_model_dir'] / "docs_topics.csv"
-        self.doc_mappings = pd.read_csv(doc_mappings_path)
+        doc_mappings_original = pd.read_csv(doc_mappings_path)
 
         # Load topic mappings
         if self.paths['custom_topics'].exists():
@@ -86,16 +103,35 @@ class LDAFileGenerator:
             self.topic_mappings = pd.DataFrame()
 
         # Load years data
-        self.years_df = pd.read_csv(self.paths['years_data'])
+        years_df_original = pd.read_csv(self.paths['years_data'])
 
         print(f"✅ Loaded model with {self.model.num_topics} topics")
-        print(f"✅ Loaded {len(self.doc_mappings)} document mappings")
-        print(f"✅ Loaded {len(self.years_df)} year records")
+        print(f"✅ Loaded {len(doc_mappings_original)} document mappings")
+        print(f"✅ Loaded {len(years_df_original)} year records")
+
+        # Apply file length filtering if requested
+        if apply_length_filter:
+            print("\n📏 Applying file length filtering...")
+            check_file_length_constants()
+            
+            self.doc_mappings, self.years_df, filtering_stats = filter_lda_input_data(
+                doc_mappings_original, years_df_original
+            )
+            
+            print_filtering_summary(filtering_stats)
+        else:
+            print("⚠️ Skipping file length filtering")
+            self.doc_mappings = doc_mappings_original
+            self.years_df = years_df_original
 
     def create_single_topic_data(self):
-        """Create single-topic analysis data"""
+        """Create single-topic analysis data with topic filtering"""
+        print("🔄 Creating single-topic data...")
+        
+        # Merge years with document mappings
         self.merged_df = self.years_df.merge(self.doc_mappings, on='filename', how='inner')
         
+        # Find topic columns
         topic_cols = [col for col in self.merged_df.columns if col.isdigit()]
         
         if topic_cols:
@@ -106,17 +142,32 @@ class LDAFileGenerator:
             self.merged_df['strongest_topic_prob'] = 1.0
 
         self.merged_df['year'] = self.merged_df['max_year'].astype(int)
+        
+        # Apply topic filtering
+        print(f"📊 Before filtering: {len(self.merged_df)} documents")
+        self.merged_df = filter_topics_from_data(
+            self.merged_df, 
+            self.excluded_topics, 
+            self.included_topics, 
+            'strongest_topic'
+        )
+        print(f"📊 After filtering: {len(self.merged_df)} documents")
 
         # Create aggregated data
-        yr_topic_agg = self.merged_df.groupby(['year', 'strongest_topic']).size().reset_index(name='verdicts')
-        yr_total = self.merged_df.groupby(['year']).size().reset_index(name='total_verdicts')
-        self.yr_agg_df = yr_topic_agg.merge(yr_total, on='year')
-        self.yr_agg_df['topic_percentage'] = (self.yr_agg_df['verdicts'] * 100.0 / self.yr_agg_df['total_verdicts']).round(2)
+        if not self.merged_df.empty:
+            yr_topic_agg = self.merged_df.groupby(['year', 'strongest_topic']).size().reset_index(name='verdicts')
+            yr_total = self.merged_df.groupby(['year']).size().reset_index(name='total_verdicts')
+            self.yr_agg_df = yr_topic_agg.merge(yr_total, on='year')
+            self.yr_agg_df['topic_percentage'] = (self.yr_agg_df['verdicts'] * 100.0 / self.yr_agg_df['total_verdicts']).round(2)
+        else:
+            self.yr_agg_df = pd.DataFrame()
 
         print(f"✅ Created single-topic data: {len(self.merged_df)} documents")
 
-    def create_multi_topic_data(self, threshold: float = 0.3):
-        """Create multi-topic analysis data"""
+    def create_multi_topic_data(self, threshold: float = DEFAULT_MULTI_TOPIC_THRESHOLD, top_k: int = DEFAULT_TOP_K_TOPICS):
+        """Create multi-topic analysis data with topic filtering and top-K support"""
+        print(f"🔄 Creating multi-topic data with threshold {threshold} and top-{top_k} topics...")
+        
         topic_cols = [col for col in self.doc_mappings.columns if col.isdigit()]
         
         if not topic_cols:
@@ -127,32 +178,59 @@ class LDAFileGenerator:
         
         for _, row in self.doc_mappings.iterrows():
             filename = row['filename']
-            topics_above_threshold = []
-            max_prob = -1
-            max_topic = None
-
+            
+            # Get all topic probabilities for this document (after filtering)
+            filtered_topics = []
             for topic_col in topic_cols:
                 topic_prob = row[topic_col]
-                if topic_prob >= threshold:
-                    topics_above_threshold.append((int(topic_col), topic_prob))
-                if topic_prob > max_prob:
-                    max_prob = topic_prob
-                    max_topic = int(topic_col)
-
+                topic_id = int(topic_col)
+                
+                # Apply topic filtering here
+                if self.included_topics is not None and topic_id not in self.included_topics:
+                    continue
+                if self.excluded_topics and topic_id in self.excluded_topics:
+                    continue
+                
+                filtered_topics.append((topic_id, topic_prob))
+            
+            if not filtered_topics:
+                continue  # Skip if no topics passed filtering
+            
+            # Sort topics by probability (highest first)
+            filtered_topics.sort(key=lambda x: x[1], reverse=True)
+            
+            # Get topics above threshold
+            topics_above_threshold = [(topic_id, prob) for topic_id, prob in filtered_topics if prob >= threshold]
+            
+            # Get top-K topics (regardless of threshold)
+            top_k_topics = filtered_topics[:top_k]
+            
+            # Combine both approaches: use threshold OR top-K (whichever gives more topics)
             if topics_above_threshold:
-                for topic_id, topic_prob in topics_above_threshold:
-                    multi_topic_data.append({
-                        'filename': filename,
-                        'topic_id': topic_id,
-                        'topic_probability': round(topic_prob, 4),
-                        'is_strongest': topic_prob == row[topic_cols].max()
-                    })
+                # If we have topics above threshold, include all of them
+                selected_topics = topics_above_threshold
+                # But also ensure we have at least top-K if threshold gives us fewer
+                if len(topics_above_threshold) < top_k:
+                    for topic_id, prob in top_k_topics:
+                        if (topic_id, prob) not in topics_above_threshold:
+                            selected_topics.append((topic_id, prob))
+                            if len(selected_topics) >= top_k:
+                                break
             else:
+                # If no topics above threshold, fall back to top-K
+                selected_topics = top_k_topics
+            
+            # Get the strongest topic for comparison
+            max_prob = filtered_topics[0][1] if filtered_topics else 0
+            
+            # Add selected topics to data
+            for topic_id, topic_prob in selected_topics:
                 multi_topic_data.append({
                     'filename': filename,
-                    'topic_id': max_topic,
-                    'topic_probability': round(max_prob, 4),
-                    'is_strongest': True
+                    'topic_id': topic_id,
+                    'topic_probability': round(topic_prob, 4),
+                    'is_strongest': topic_prob == max_prob,
+                    'selection_method': 'threshold' if topic_prob >= threshold else 'top_k'
                 })
         
         self.merged_df = pd.DataFrame(multi_topic_data)
@@ -177,48 +255,64 @@ class LDAFileGenerator:
             print(f"✅ Created multi-topic data: {len(self.merged_df)} topic-document pairs")
             return True
         
+        print("⚠️ No data remaining after filtering")
         return False
 
-    def generate_visualizations(self, min_year: int = 1948):
-        """Generate all visualization files"""
+    def generate_visualizations(self, min_year: int = DEFAULT_MIN_YEAR):
+        """Generate all visualization files with topic filtering"""
         print("📊 Generating visualizations...")
+
+        if self.yr_agg_df.empty:
+            print("⚠️ No aggregated data available for visualizations")
+            return
 
         # Individual charts
         print("📈 Creating trends chart...")
-        trend_fig = plot_topics_trend(self.yr_agg_df, self.topic_mappings, min_year)
+        trend_fig = plot_topics_trend(
+            self.yr_agg_df, self.topic_mappings, min_year,
+            self.excluded_topics, self.included_topics
+        )
         trend_path = self.paths['output_dir'] / 'topics_trend.html'
         trend_fig.write_html(trend_path)
 
         print("📊 Creating absolute trends chart...")
-        absolute_fig = plot_absolute_topics_trend(self.yr_agg_df, self.topic_mappings, min_year)
+        absolute_fig = plot_absolute_topics_trend(
+            self.yr_agg_df, self.topic_mappings, min_year,
+            self.excluded_topics, self.included_topics
+        )
         absolute_path = self.paths['output_dir'] / 'absolute_trends.html'
         absolute_fig.write_html(absolute_path)
 
         print("📚 Creating stacked distribution chart...")
-        stacked_fig = plot_stacked_yearly_distribution(self.yr_agg_df, self.topic_mappings, min_year)
+        stacked_fig = plot_stacked_yearly_distribution(
+            self.yr_agg_df, self.topic_mappings, min_year,
+            self.excluded_topics, self.included_topics
+        )
         stacked_path = self.paths['output_dir'] / 'stacked_distribution.html'
         stacked_fig.write_html(stacked_path)
 
-        print("📋 Creating histogram...")
-        hist_fig = plot_topics_histogram(self.yr_agg_df, self.topic_mappings)
+        print("📊 Creating histogram...")
+        hist_fig = plot_topics_histogram(
+            self.yr_agg_df, self.topic_mappings,
+            self.excluded_topics, self.included_topics
+        )
         hist_path = self.paths['output_dir'] / 'topics_histogram.html'
         hist_fig.write_html(hist_path)
 
-        # Word clouds
         print("🎨 Creating word clouds...")
-        wordcloud_path = self.paths['output_dir'] / 'topics_wordcloud.png'
-        wordcloud_fig = create_wordcloud_grid(self.model, self.topic_mappings)
-        if wordcloud_fig:
-            wordcloud_fig.savefig(wordcloud_path, dpi=300, bbox_inches='tight', facecolor='white')
+        try:
+            wordcloud_fig = create_wordcloud_grid(
+                self.model, self.topic_mappings,
+                self.excluded_topics, self.included_topics
+            )
+            if wordcloud_fig:
+                wordcloud_path = self.paths['output_dir'] / 'topics_wordcloud.png'
+                wordcloud_fig.savefig(wordcloud_path, dpi=300, bbox_inches='tight')
+                print(f"✅ Word cloud saved to {wordcloud_path}")
+        except Exception as e:
+            print(f"⚠️ Error creating word cloud: {e}")
 
-        # Combined HTML
-        combined_html = self.create_combined_html(min_year)
-        combined_path = self.paths['output_dir'] / 'comprehensive_analysis.html'
-        with open(combined_path, 'w', encoding='utf-8') as f:
-            f.write(combined_html)
-
-        print(f"✅ Visualizations saved to {self.paths['output_dir']}")
-        return trend_path, absolute_path, stacked_path, hist_path, wordcloud_path, combined_path
+        print("✅ All visualizations generated")
 
     def create_combined_html(self, min_year: int) -> str:
         """Create combined HTML file"""
@@ -407,8 +501,10 @@ class LDAFileGenerator:
             'most_common_topics': most_common
         }
 
-    def run_analysis(self, multi_topic_mode: bool = False, min_year: int = 1948):
-        """Run complete analysis"""
+    def run_analysis(self, multi_topic_mode: bool = False, min_year: int = DEFAULT_MIN_YEAR, 
+                    threshold: float = DEFAULT_MULTI_TOPIC_THRESHOLD, top_k: int = DEFAULT_TOP_K_TOPICS,
+                    apply_length_filter: bool = True):
+        """Run complete analysis with topic filtering, top-K support, and file length filtering"""
         mode_name = "multi-topic" if multi_topic_mode else "single-topic"
         mode_suffix = "multi_topic" if multi_topic_mode else "single_topic"
         
@@ -418,12 +514,12 @@ class LDAFileGenerator:
         # Setup paths for this mode
         self.setup_paths(mode_suffix)
         
-        # Load data
-        self.load_data()
+        # Load data (with optional file length filtering)
+        self.load_data(apply_length_filter)
         
         # Process data
         if multi_topic_mode:
-            success = self.create_multi_topic_data()
+            success = self.create_multi_topic_data(threshold, top_k)
             if not success:
                 print("❌ Failed to create multi-topic data")
                 return
@@ -454,33 +550,62 @@ class LDAFileGenerator:
 
 
 def main():
-    """Main function"""
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="LDA Analysis File Generator")
+    """Main function with topic filtering and file length filtering support"""
+    parser = argparse.ArgumentParser(description="LDA Analysis File Generator with Topic Filtering and File Length Filtering")
     parser.add_argument('--mode', choices=['single', 'multi', 'both'], default='both',
-                       help='Analysis mode')
-    parser.add_argument('--min-year', type=int, default=1948,
-                       help='Minimum year for analysis')
+                       help='Analysis mode: single, multi, or both (default: both)')
+    parser.add_argument('--exclude-topics', type=int, nargs='*', 
+                       help=f'Topics to exclude from analysis (default: {DEFAULT_EXCLUDED_TOPICS})')
+    parser.add_argument('--include-topics', type=int, nargs='*',
+                       help='Topics to include in analysis (if specified, only these will be analyzed)')
+    parser.add_argument('--min-year', type=int, default=DEFAULT_MIN_YEAR,
+                       help=f'Minimum year for analysis (default: {DEFAULT_MIN_YEAR})')
+    parser.add_argument('--threshold', type=float, default=DEFAULT_MULTI_TOPIC_THRESHOLD,
+                       help=f'Probability threshold for multi-topic analysis (default: {DEFAULT_MULTI_TOPIC_THRESHOLD})')
+    parser.add_argument('--top-k', type=int, default=DEFAULT_TOP_K_TOPICS,
+                       help=f'Number of top topics to include per document (default: {DEFAULT_TOP_K_TOPICS})')
+    parser.add_argument('--no-length-filter', action='store_true',
+                       help='Disable file length filtering (include all files regardless of length)')
+    
     args = parser.parse_args()
+    
+    # Handle topic filtering arguments
+    excluded_topics = args.exclude_topics if args.exclude_topics is not None else DEFAULT_EXCLUDED_TOPICS
+    included_topics = args.include_topics
+    
+    # Set up file length filtering
+    apply_length_filter = not args.no_length_filter
     
     print("🔬 LDA Analysis File Generator")
     print("=" * 40)
+    print(f"📊 Analysis mode: {args.mode}")
+    print(f"📅 Minimum year: {args.min_year}")
+    print(f"🎯 Multi-topic threshold: {args.threshold}")
+    print(f"🔝 Top-K topics per document: {args.top_k}")
+    print(f"📏 File length filtering: {'Enabled' if apply_length_filter else 'Disabled'}")
 
     try:
         if args.mode == 'both':
             # Run both analyses
-            generator = LDAFileGenerator()
-            generator.run_analysis(multi_topic_mode=False, min_year=args.min_year)
+            print("\n📊 Running single-topic analysis...")
+            generator_single = LDAFileGenerator(excluded_topics, included_topics)
+            generator_single.run_analysis(multi_topic_mode=False, min_year=args.min_year, 
+                                        threshold=args.threshold, top_k=args.top_k, 
+                                        apply_length_filter=apply_length_filter)
             
-            generator = LDAFileGenerator()
-            generator.run_analysis(multi_topic_mode=True, min_year=args.min_year)
+            print("\n🎯 Running multi-topic analysis...")
+            generator_multi = LDAFileGenerator(excluded_topics, included_topics)
+            generator_multi.run_analysis(multi_topic_mode=True, min_year=args.min_year, 
+                                       threshold=args.threshold, top_k=args.top_k, 
+                                       apply_length_filter=apply_length_filter)
             
             print("\n🎉 Both analyses completed!")
         else:
-            generator = LDAFileGenerator()
+            generator = LDAFileGenerator(excluded_topics, included_topics)
             multi_mode = args.mode == 'multi'
-            generator.run_analysis(multi_topic_mode=multi_mode, min_year=args.min_year)
+            generator.run_analysis(multi_topic_mode=multi_mode, min_year=args.min_year, 
+                                 threshold=args.threshold, top_k=args.top_k, 
+                                 apply_length_filter=apply_length_filter)
 
     except Exception as e:
         print(f"❌ Analysis error: {e}")
