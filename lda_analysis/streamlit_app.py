@@ -306,18 +306,27 @@ def main():
     
     # File length filtering option
     st.sidebar.subheader("📏 File Length Filtering")
+    
+    # Get threshold info for help text
+    try:
+        from constants import FILE_LENGTH_MIN_THRESHOLD, FILE_LENGTH_MEDIAN, FILE_LENGTH_MAXIMUM
+        help_text = f"Filter out files with fewer than {FILE_LENGTH_MIN_THRESHOLD:,} words. Based on analysis: Median={FILE_LENGTH_MEDIAN:,}, Max={FILE_LENGTH_MAXIMUM:,}, Threshold={FILE_LENGTH_MIN_THRESHOLD:,} words"
+    except ImportError:
+        help_text = "Filter out files that are too short based on pre-calculated statistics"
+    
     apply_length_filter = st.sidebar.checkbox(
         "Apply file length filtering",
         value=True,
-        help="Filter out files that are too short based on pre-calculated statistics"
+        help=help_text
     )
     
     if apply_length_filter:
         # Show file length constants if available
         try:
             check_file_length_constants()
-            st.sidebar.success("✅ File length filtering enabled")
-        except NameError:
+            from constants import FILE_LENGTH_MIN_THRESHOLD
+            st.sidebar.success(f"✅ File length filtering enabled (≥{FILE_LENGTH_MIN_THRESHOLD:,} words)")
+        except (NameError, ImportError):
             st.sidebar.warning("⚠️ File length constants not set. Run analyze_file_lengths.py first.")
             apply_length_filter = False
     else:
@@ -449,6 +458,16 @@ def main():
     st.sidebar.markdown(f"**Model:** {model.num_topics} topics")
     st.sidebar.markdown(f"**Data:** {mode_info}")
     st.sidebar.markdown(f"**Year Range:** {merged_df['year'].min()} - {merged_df['year'].max()}")
+    
+    # Add file length filtering info
+    if apply_length_filter:
+        try:
+            from constants import FILE_LENGTH_MIN_THRESHOLD
+            st.sidebar.markdown(f"**File Filter:** ≥{FILE_LENGTH_MIN_THRESHOLD:,} words")
+        except ImportError:
+            st.sidebar.markdown("**File Filter:** Length filtering applied")
+    else:
+        st.sidebar.markdown("**File Filter:** All files included")
     
     # Main content tabs
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
